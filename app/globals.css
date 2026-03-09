@@ -1,0 +1,129 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --cherry-950: #1a0608;
+  --cherry-900: #2d0a0f;
+  --brass: #b8860b;
+  --neon-gold: #ffd700;
+  --neon-rose: #ff6b9d;
+}
+
+body {
+  background: var(--cherry-950);
+  color: #f5e6e8;
+}
+
+.text-neon-glow {
+  text-shadow: 0 0 10px rgba(255, 215, 0, 0.6), 0 0 30px rgba(255, 215, 0, 0.3);
+}
+
+.text-neon-rose {
+  text-shadow: 0 0 10px rgba(255, 107, 157, 0.6);
+}
+
+.border-brass {
+  border-image: linear-gradient(135deg, #b8860b, #d4a84b, #8b6914) 1;
+}
+
+.projector-shimmer {
+  background: linear-gradient(
+    105deg,
+    transparent 40%,
+    rgba(255, 215, 0, 0.08) 45%,
+    rgba(255, 215, 0, 0.15) 50%,
+    rgba(255, 215, 0, 0.08) 55%,
+    transparent 60%
+  );
+  background-size: 200% 100%;
+}
+
+.card-hover:hover .projector-shimmer {
+  animation: projector-sweep 1.5s ease-in-out;
+}
+
+@keyframes projector-sweep {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  background: linear-gradient(90deg, var(--cherry-900), var(--brass));
+  border-radius: 3px;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  background: var(--brass);
+  border-radius: 50%;
+  box-shadow: 0 0 12px rgba(184, 134, 11, 0.6);
+  cursor: pointer;
+  margin-top: -7px;
+}
+
+input[type="range"]::-moz-range-track {
+  height: 6px;
+  background: linear-gradient(90deg, var(--cherry-900), var(--brass));
+  border-radius: 3px;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  background: var(--brass);
+  border-radius: 50%;
+  box-shadow: 0 0 12px rgba(184, 134, 11, 0.6);
+  cursor: pointer;
+  border: none;
+}
+
+/* Scrollbar: match Neo-Deco cherry/brass aesthetic; keep away from content */
+.scroll-area-slate {
+  scrollbar-gutter: stable;
+  padding-right: 1.5rem;
+}
+.scroll-area-slate::-webkit-scrollbar {
+  width: 10px;
+}
+.scroll-area-slate::-webkit-scrollbar-track {
+  background: var(--cherry-900);
+  border-radius: 5px;
+  margin: 4px 0;
+}
+.scroll-area-slate::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--brass), #8b6914);
+  border-radius: 5px;
+  border: 2px solid var(--cherry-900);
+}
+.scroll-area-slate::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #d4a84b, var(--brass));
+}
+.scroll-area-slate {
+  scrollbar-width: thin;
+  scrollbar-color: var(--brass) var(--cherry-900);
+}
+
+/* Aesthetic step: 2-row chip grid, responsive column width for mobile */
+.aesthetic-chip-grid {
+  display: grid;
+  gap: 0.5rem;
+  width: 100%;
+  grid-template-rows: repeat(2, 2.5rem);
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(5rem, 1fr);
+}
+@media (min-width: 640px) {
+  .aesthetic-chip-grid {
+    grid-auto-columns: minmax(7.5rem, 11rem);
+  }
+}
