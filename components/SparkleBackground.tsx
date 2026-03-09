@@ -2,25 +2,39 @@
 
 import { motion } from 'framer-motion';
 
-// Sparkle count and intensity scale with step (1 = subtle, 5 = very sparkly)
-const SPARKLE_COUNTS = [10, 18, 28, 40, 55];
+// Density matched across all pages (wizard + results)
+const SPARKLE_COUNT = 55;
+const SPARKLE_INTENSITY = 1;
 
-function Sparkle({ delay, x, y, size, intensity }: { delay: number; x: string; y: string; size: number; intensity: number }) {
-  const baseOpacity = 0.25 + intensity * 0.4;
+// Fireplace-style low flicker: smooth opacity waves, varied timing so stars don't sync
+function Sparkle({
+  delay,
+  x,
+  y,
+  size,
+  duration,
+  keyframes,
+}: {
+  delay: number;
+  x: string;
+  y: string;
+  size: number;
+  duration: number;
+  keyframes: number[];
+}) {
   return (
     <motion.span
       aria-hidden
       className="absolute pointer-events-none text-neon-gold"
       style={{ left: x, top: y, fontSize: size, textShadow: '0 0 8px rgba(255,215,0,0.6)' }}
-      initial={{ opacity: 0 }}
-      animate={{
-        opacity: [0, baseOpacity * 0.5, baseOpacity, baseOpacity * 0.6, baseOpacity],
-      }}
+      initial={{ opacity: keyframes[0] }}
+      animate={{ opacity: keyframes }}
       transition={{
-        duration: 2.5,
+        duration,
         delay,
         repeat: Infinity,
-        repeatDelay: 1.5,
+        repeatType: 'reverse',
+        ease: 'easeInOut',
       }}
     >
       ✦
@@ -28,16 +42,29 @@ function Sparkle({ delay, x, y, size, intensity }: { delay: number; x: string; y
   );
 }
 
-export default function SparkleBackground({ currentStep }: { currentStep: number }) {
-  const count = SPARKLE_COUNTS[Math.min(currentStep - 1, SPARKLE_COUNTS.length - 1)] ?? SPARKLE_COUNTS[0];
-  const intensity = currentStep / 5;
-  const positions = Array.from({ length: count }, (_, i) => ({
-    id: i,
-    x: `${3 + (i * 19) % 94}%`,
-    y: `${5 + (i * 31) % 90}%`,
-    size: 8 + (i % 6) * 3,
-    delay: (i * 0.03) % 2,
-  }));
+// Gentle flicker keyframes (low fireplace glow) — more points = smoother
+const FLICKER_KEYFRAMES = [0.2, 0.45, 0.3, 0.55, 0.25, 0.5, 0.35, 0.45, 0.2].map(
+  (t) => t * SPARKLE_INTENSITY
+);
+
+export default function SparkleBackground({ currentStep }: { currentStep?: number }) {
+  const positions = Array.from({ length: SPARKLE_COUNT }, (_, i) => {
+    // Vary duration 2.2–4s and phase so flickers don't align
+    const duration = 2.2 + (i * 0.031) % 1.8;
+    const delay = (i * 0.07) % 2.5;
+    // Slight per-sparkle keyframe variation for organic feel
+    const shift = (i % 5) * 0.02;
+    const keyframes = FLICKER_KEYFRAMES.map((k) => Math.max(0.1, Math.min(0.7, k + shift)));
+    return {
+      id: i,
+      x: `${3 + (i * 19) % 94}%`,
+      y: `${5 + (i * 31) % 90}%`,
+      size: 8 + (i % 6) * 3,
+      delay,
+      duration,
+      keyframes,
+    };
+  });
 
   return (
     <div className="fixed inset-0 pointer-events-none overflow-hidden z-0" aria-hidden>
@@ -48,7 +75,8 @@ export default function SparkleBackground({ currentStep }: { currentStep: number
           x={p.x}
           y={p.y}
           size={p.size}
-          intensity={intensity}
+          duration={p.duration}
+          keyframes={p.keyframes}
         />
       ))}
     </div>

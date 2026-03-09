@@ -77,7 +77,7 @@ function scoreMovie(movie: Movie, filters: FilterState): number {
   if (filters.oscarNominee === true && movie.oscarNominee) score += 1;
   if (filters.decade.length > 0 && decadeMatch(movie.year, filters.decade)) score += 1;
   if (filters.runtime != null && runtimeMatch(movie.runtimeMinutes, filters.runtime)) score += 1;
-  if (filters.directorProminence > 0 && movie.directorProminence >= filters.directorProminence) score += 1;
+  if (filters.directorProminence > 0 && movie.directorProminence >= filters.directorProminence) score += 4;
   /* Hidden Gem boost: when Cult Classic is on, prioritize huge gap between initial box office and current status. */
   if (filters.cultClassic === true && hasCultSignature(movie)) {
     const pop = (movie.popularity ?? 0) + 1;
@@ -106,7 +106,7 @@ export function filterMovies(movieList: Movie[], filters: FilterState): Movie[] 
     if (filters.criticsVsFans != null && movie.criticsVsFans !== filters.criticsVsFans) return false;
     if (filters.decade.length > 0 && !decadeMatch(movie.year, filters.decade)) return false;
     if (filters.runtime != null && !runtimeMatch(movie.runtimeMinutes, filters.runtime)) return false;
-    if (filters.directorProminence > 0 && movie.directorProminence < filters.directorProminence) return false;
+    /* Director prominence: scoring-only so we never return zero results; movies that meet the bar rank higher */
     return true;
   });
   const withScores = filtered.map((m) => ({ movie: m, score: scoreMovie(m, filters) }));

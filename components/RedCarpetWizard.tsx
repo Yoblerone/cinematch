@@ -11,6 +11,7 @@ import Step4Aesthetic from './wizard/Step4Aesthetic';
 import Step4Pedigree from './wizard/Step4Pedigree';
 import ResultsView from './ResultsView';
 import SparkleBackground from './SparkleBackground';
+import FilterLegend from './FilterLegend';
 
 const STEPS = 4;
 
@@ -78,15 +79,17 @@ export default function RedCarpetWizard() {
             CINEMATCH
           </h1>
           <div className="flex flex-wrap items-center gap-2 sm:gap-4">
-            <button
-              type="button"
-              onClick={() => setStep(1)}
-              className="flex items-center gap-1.5 min-h-[44px] px-3 py-2 rounded-lg border border-brass/50 text-cherry-600 text-sm hover:border-brass hover:text-brass-light transition-all touch-manipulation"
-              title="Back to start"
-            >
-              <RotateCcw className="w-4 h-4" />
-              Back to beginning
-            </button>
+            {step > 1 && (
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                className="flex items-center gap-1.5 min-h-[44px] px-3 py-2 rounded-lg border border-brass/50 text-cherry-600 text-sm hover:border-brass hover:text-brass-light transition-all touch-manipulation"
+                title="Back to start"
+              >
+                <RotateCcw className="w-4 h-4" />
+                Back to beginning
+              </button>
+            )}
             <span className="text-cherry-600 text-sm">
               Step {step} of {STEPS}
             </span>
@@ -213,6 +216,11 @@ export default function RedCarpetWizard() {
             <ChevronLeft className="w-5 h-5" />
             Back
           </button>
+          {step === 1 && (
+            <div className="flex-1 flex justify-center">
+              <FilterLegend />
+            </div>
+          )}
           {step < STEPS ? (
             <button
               type="button"

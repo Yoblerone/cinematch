@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SlidersHorizontal, X, Plus, Minus, RotateCw, Film, Zap, Palette, Award } from 'lucide-react';
+import FilterLegend from './FilterLegend';
+import { RankIcon, FilterIcon } from './FilterTypeIcon';
 import type { FilterState, VisualStyle, Soundtrack, Genre, Theme, CriticsVsFans, Decade, Runtime } from '@/lib/types';
 import { MAX_GENRES } from '@/lib/types';
 import { ALL_VISUAL_STYLE_OPTIONS, ALL_SOUNDTRACK_OPTIONS, ALL_THEME_OPTIONS, GENRE_OPTIONS } from '@/lib/optionSets';
@@ -24,6 +26,7 @@ function ChipRow<T extends string>({
   expanded,
   onExpandToggle,
   label,
+  icon,
 }: {
   options: T[];
   selectedSet: T[];
@@ -31,6 +34,7 @@ function ChipRow<T extends string>({
   expanded: boolean;
   onExpandToggle: () => void;
   label: string;
+  icon?: React.ReactNode;
 }) {
   const selectedInList = selectedSet.filter((s) => options.includes(s));
   const rest = options.filter((o) => !selectedSet.includes(o));
@@ -39,7 +43,10 @@ function ChipRow<T extends string>({
 
   return (
     <div>
-      <label className="block text-sm font-medium text-brass-light mb-2">{label}</label>
+      <label className="block text-sm font-medium text-brass-light mb-2 flex items-center gap-1.5">
+        {icon}
+        {label}
+      </label>
       <div className="flex flex-wrap gap-2 items-center">
         {visible.map((opt) => {
           const selected = selectedSet.includes(opt);
@@ -175,6 +182,7 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
 
               <div className="flex-1 overflow-y-auto scroll-area-slate p-6">
                 <div className="max-w-4xl mx-auto space-y-6">
+                  <FilterLegend className="mb-2" />
                   {/* The Basics */}
                   <Section title="The Basics" icon={Film}>
                     <div className="grid sm:grid-cols-2 gap-6">
@@ -192,9 +200,10 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                     expanded={expandedGenre}
                     onExpandToggle={() => setExpandedGenre((e) => !e)}
                     label="Genre"
+                    icon={<FilterIcon />}
                   />
                   <div>
-                    <label className="block text-sm font-medium text-brass-light mb-2">Decade</label>
+                    <label className="block text-sm font-medium text-brass-light mb-2 flex items-center gap-1.5"><FilterIcon /> Decade</label>
                     <div className="flex flex-wrap gap-2">
                       {(['60s', '70s', '80s', '90s', '2000s', '2010s', '2020s'] as const).map((label) => {
                         const value = label as NonNullable<Decade>;
@@ -218,7 +227,7 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-brass-light mb-2">Runtime</label>
+                    <label className="block text-sm font-medium text-brass-light mb-2 flex items-center gap-1.5"><FilterIcon /> Runtime</label>
                     <div className="flex gap-2">
                       {([null, 'short', 'medium', 'long'] as const).map((v) => (
                         <button
@@ -246,7 +255,7 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                   {SLIDER_CONFIG.map(({ key, label, low, high }) => (
                     <div key={key} className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="font-medium text-brass-light text-sm">{label}</span>
+                        <span className="font-medium text-brass-light text-sm flex items-center gap-1.5"><RankIcon /> {label}</span>
                         <span className="text-cherry-600 text-sm">{filters[key]}</span>
                       </div>
                       <input
@@ -285,6 +294,7 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                     expanded={expandedTheme}
                     onExpandToggle={() => setExpandedTheme((e) => !e)}
                     label="Theme / Mood"
+                    icon={<RankIcon />}
                   />
 
                   {/* Visual Style – first 3 + expand */}
@@ -301,6 +311,7 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                     expanded={expandedVisual}
                     onExpandToggle={() => setExpandedVisual((e) => !e)}
                     label="Visual Style"
+                    icon={<RankIcon />}
                   />
 
                   {/* Soundtrack – first 3 + expand */}
@@ -325,7 +336,7 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                   <Section title="Pedigree" icon={Award}>
                     <div className="grid sm:grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-sm font-medium text-brass-light mb-2">Cult Classic</label>
+                    <label className="block text-sm font-medium text-brass-light mb-2 flex items-center gap-1.5"><FilterIcon /> Cult Classic</label>
                     <div className="flex gap-2">
                       {([null, true, false] as const).map((v) => (
                         <button
@@ -359,7 +370,7 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-brass-light mb-2">Critics vs. Fans</label>
+                    <label className="block text-sm font-medium text-brass-light mb-2 flex items-center gap-1.5"><FilterIcon /> Critics vs. Fans</label>
                     <div className="flex flex-wrap gap-2">
                       {(['any', 'critics', 'fans', 'both'] as const).map((opt) => {
                         const v = opt === 'any' ? null : (opt as CriticsVsFans);
@@ -416,7 +427,7 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                   </div>
                   <div className="space-y-2 sm:col-span-2">
                     <div className="flex items-center justify-between">
-                      <label className="font-medium text-brass-light text-sm">Director prominence</label>
+                      <label className="font-medium text-brass-light text-sm flex items-center gap-1.5"><RankIcon /> Director prominence</label>
                       <span className="text-cherry-600 text-sm">{filters.directorProminence}</span>
                     </div>
                     <input

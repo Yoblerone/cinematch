@@ -27,6 +27,8 @@ const config: Config = {
           rose: '#ff6b9d',
           cyan: '#00f5ff',
           amber: '#ffbf00',
+          green: '#39ff14',
+          blue: '#00d4ff',
         },
       },
       fontFamily: {
@@ -37,6 +39,8 @@ const config: Config = {
         'brass': '0 0 20px rgba(184, 134, 11, 0.3)',
         'neon-glow': '0 0 30px rgba(255, 215, 0, 0.4)',
         'neon-rose': '0 0 20px rgba(255, 107, 157, 0.5)',
+        'neon-green': '0 0 12px rgba(57, 255, 20, 0.7)',
+        'neon-blue': '0 0 12px rgba(0, 212, 255, 0.7)',
         'projector': '0 0 60px 20px rgba(255, 215, 0, 0.15)',
       },
       animation: {

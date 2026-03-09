@@ -164,10 +164,15 @@ async function fetchTmdb<T>(apiKey: string, path: string): Promise<T> {
   return res.json();
 }
 
-/** Scale TMDB popularity (typically 0–100+) to our 0–100 director prominence. */
+/**
+ * Scale TMDB person popularity (often 0.5–50 for directors) to our 0–100 director prominence.
+ * Uses log2 so small differences among obscure directors don't dominate; multiplier 15
+ * spreads "known" directors (pop ~5–20) into the 45–80 range so the prominence slider
+ * meaningfully ranks results without needing blockbuster-level popularity.
+ */
 function scalePopularity(pop: number): number {
   if (pop <= 0) return 0;
-  return Math.min(100, Math.round(Math.log2(pop + 1) * 12));
+  return Math.min(100, Math.round(Math.log2(pop + 1) * 15));
 }
 
 /** Top-billed cast with solid popularity → hasAListCast (recognizable names, not just megastars). */
