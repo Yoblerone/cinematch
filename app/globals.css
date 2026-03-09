@@ -10,9 +10,24 @@
   --neon-rose: #ff6b9d;
 }
 
+html {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
 body {
   background: var(--cherry-950);
   color: #f5e6e8;
+  overflow-x: hidden;
+  min-height: 100dvh;
+}
+
+/* Safe area for modals and FAB on notched devices (e.g. iPhone) */
+.safe-area-slate {
+  padding-left: max(0.75rem, env(safe-area-inset-left));
+  padding-right: max(0.75rem, env(safe-area-inset-right));
+  padding-top: max(0.5rem, env(safe-area-inset-top));
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
 }
 
 .text-neon-glow {

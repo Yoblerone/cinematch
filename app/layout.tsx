@@ -21,6 +21,7 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   maximumScale: 5,
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({
@@ -30,8 +31,8 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${playfair.variable} ${dmSans.variable}`}>
-      <body className="font-sans antialiased bg-cherry-950 text-[#f5e6e8] min-h-screen flex flex-col">
-        <div className="flex-1 min-h-screen border-2 border-double border-brass/80">
+      <body className="font-sans antialiased bg-cherry-950 text-[#f5e6e8] min-h-[100dvh] flex flex-col overflow-x-hidden">
+        <div className="flex-1 min-h-[100dvh] border-2 border-double border-brass/80 overflow-x-hidden">
           {children}
         </div>
       </body>

@@ -97,12 +97,12 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-xl border-2 border-brass/40 bg-cherry-900/30 overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-brass/40 bg-cherry-900/50">
-        <Icon className="w-5 h-5 text-brass" />
+    <section className="rounded-2xl border border-brass/40 overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-brass/30">
+        <Icon className="w-4 h-4 text-brass" />
         <h3 className="text-sm font-display font-semibold text-neon-gold uppercase tracking-wide">{title}</h3>
       </div>
-      <div className="p-4">{children}</div>
+      <div className="p-3">{children}</div>
     </section>
   );
 }
@@ -138,7 +138,7 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
       <motion.button
         type="button"
         onClick={openModal}
-        className="fixed bottom-6 right-6 z-[45] flex items-center gap-2 px-5 py-3 rounded-xl border-2 border-brass bg-cherry-900 text-neon-gold shadow-brass hover:bg-brass/20 transition-all font-medium"
+        className="fixed z-[45] flex items-center gap-2 px-5 py-3 rounded-2xl border-2 border-brass bg-cherry-900 text-neon-gold shadow-brass hover:bg-brass/20 transition-all font-medium min-h-[44px] right-[max(1.5rem,env(safe-area-inset-right))] bottom-[max(1.5rem,env(safe-area-inset-bottom))]"
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}
         aria-label="Open Director's Slate"
@@ -159,13 +159,21 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
               aria-hidden
             />
             <motion.div
-              initial={{ opacity: 0, scale: 0.96 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.96 }}
-              transition={{ type: 'spring', damping: 25 }}
-              className="fixed inset-4 z-[50] sm:inset-6 md:inset-8 flex flex-col rounded-xl border-2 border-brass bg-cherry-950 shadow-neon-glow overflow-hidden"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[50] flex items-center justify-center p-4"
+              style={{ paddingLeft: 'max(1rem, env(safe-area-inset-left))', paddingRight: 'max(1rem, env(safe-area-inset-right))', paddingTop: 'max(1rem, env(safe-area-inset-top))', paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
             >
-              <div className="flex items-center justify-between p-5 border-b border-brass/40 bg-cherry-900/50">
+              <motion.div
+                initial={{ scale: 0.96 }}
+                animate={{ scale: 1 }}
+                exit={{ scale: 0.96 }}
+                transition={{ type: 'spring', damping: 25 }}
+                className="flex flex-col rounded-2xl border-2 border-brass bg-cherry-950 shadow-neon-glow overflow-hidden w-full max-w-2xl max-h-full min-h-0"
+                style={{ maxHeight: 'min(85dvh, calc(100svh - 2rem))' }}
+              >
+              <div className="flex items-center justify-between px-4 py-3 border-b border-brass/40 flex-shrink-0">
                 <h2 className="text-xl font-display font-semibold text-neon-gold text-neon-glow">
                   Director&apos;s Slate
                 </h2>
@@ -190,12 +198,12 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto scroll-area-slate p-6">
-                <div className="max-w-4xl mx-auto space-y-6">
+              <div className="flex-1 min-h-0 overflow-y-auto scroll-area-slate p-4">
+                <div className="space-y-4">
                   <FilterLegend className="mb-2" />
                   {/* The Basics */}
                   <Section title="The Basics" icon={Film}>
-                    <div className="grid sm:grid-cols-2 gap-6">
+                    <div className="grid sm:grid-cols-2 gap-4">
                       <ChipRow
                     options={['Any', ...GENRE_OPTIONS] as (Genre | 'Any')[]}
                     selectedSet={filters.genre.length === 0 ? ['Any'] : filters.genre}
@@ -285,12 +293,9 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                     </div>
                   </Section>
 
-                  {/* Aesthetic – theme, visual style, soundtrack: scoring-only; matches rank higher */}
+                  {/* Aesthetic */}
                   <Section title="Aesthetic" icon={Palette}>
-                    <div className="mb-4 rounded-lg border-l-2 border-brass/60 bg-cherry-900 px-3 py-2">
-                      <p className="text-sm text-brass-light/95">Theme, visual style, and soundtrack don’t exclude movies—they boost ranking. Picks that match your tags appear higher in the list.</p>
-                    </div>
-                    <div className="grid sm:grid-cols-2 gap-6">
+                    <div className="grid sm:grid-cols-2 gap-4">
                   <ChipRow
                     options={ALL_THEME_OPTIONS}
                     selectedSet={filters.theme}
@@ -345,7 +350,7 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
 
                   {/* Pedigree */}
                   <Section title="Pedigree" icon={Award}>
-                    <div className="grid sm:grid-cols-2 gap-6">
+                    <div className="grid sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-brass-light mb-2 flex items-center gap-1.5"><FilterIcon /> Cult Classic</label>
                     <div className="flex gap-2">
@@ -458,6 +463,7 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                   </Section>
                 </div>
               </div>
+              </motion.div>
             </motion.div>
           </>
         )}

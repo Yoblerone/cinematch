@@ -61,7 +61,7 @@ export default function RedCarpetWizard() {
       <ResultsView
         filters={filters}
         onUpdateFilters={updateFilters}
-        onBackToWizard={() => { setShowResults(false); setError(null); }}
+        onBackToWizard={() => { setShowResults(false); setError(null); setStep(1); }}
         results={results ?? []}
         loading={loading}
         error={error}
