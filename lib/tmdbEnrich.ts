@@ -140,6 +140,7 @@ export interface TmdbMovieDetails {
   revenue: number;
   genre_ids?: number[];
   genres?: { id: number; name: string }[];
+  imdb_id?: string | null;
 }
 
 export interface TmdbKeywordsResponse {
@@ -293,6 +294,7 @@ export async function enrichMovie(apiKey: string, base: TmdbMovieResult): Promis
     directorProminence,
     popularity,
     voteCount,
+    imdbId: details?.imdb_id ?? undefined,
   };
 }
 

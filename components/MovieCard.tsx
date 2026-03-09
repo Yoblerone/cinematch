@@ -1,10 +1,11 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Star } from 'lucide-react';
+import { Star, ExternalLink } from 'lucide-react';
 import type { Movie } from '@/lib/types';
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p';
+const IMDB_TITLE_BASE = 'https://www.imdb.com/title';
 
 interface MovieCardProps {
   movie: Movie;
@@ -60,14 +61,26 @@ export default function MovieCard({ movie, index, variant = 'compact' }: MovieCa
             </span>
           </div>
         </div>
-        <p className={`text-cherry-600 ${isFeatured ? 'text-sm mt-1' : 'text-xs mt-0.5'}`}>
+        <p className={`text-cream ${isFeatured ? 'text-sm mt-1' : 'text-xs mt-0.5'}`}>
           {movie.year}
         </p>
         <p
-          className={`text-cherry-600/90 italic ${isFeatured ? 'text-sm mt-2' : 'text-xs mt-1'} line-clamp-2`}
+          className={`text-cream/90 italic ${isFeatured ? 'text-sm mt-2' : 'text-xs mt-1'} line-clamp-2`}
         >
           &ldquo;{movie.tagline}&rdquo;
         </p>
+        {movie.imdbId && (
+          <a
+            href={`${IMDB_TITLE_BASE}/${movie.imdbId}/`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`inline-flex items-center gap-1 text-brass hover:text-neon-gold transition-colors mt-2 ${isFeatured ? 'text-sm' : 'text-xs'}`}
+            title="View on IMDB"
+          >
+            <ExternalLink className={isFeatured ? 'w-3.5 h-3.5' : 'w-3 h-3'} aria-hidden />
+            IMDB
+          </a>
+        )}
       </div>
     </motion.article>
   );

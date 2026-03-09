@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Sparkles, RotateCcw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Sparkles, Home } from 'lucide-react';
 import type { FilterState, Movie } from '@/lib/types';
 import { defaultFilters } from '@/lib/types';
 import Step1Basics from './wizard/Step1Basics';
@@ -11,7 +11,7 @@ import Step4Aesthetic from './wizard/Step4Aesthetic';
 import Step4Pedigree from './wizard/Step4Pedigree';
 import ResultsView from './ResultsView';
 import SparkleBackground from './SparkleBackground';
-import FilterLegend from './FilterLegend';
+import MarqueeLogo from './MarqueeLogo';
 
 const STEPS = 4;
 
@@ -73,31 +73,27 @@ export default function RedCarpetWizard() {
   return (
     <div className="min-h-screen bg-cherry-950 flex flex-col relative">
       <SparkleBackground currentStep={step} />
-      <header className="border-b-2 border-brass/40 py-4 px-4 sm:py-6 sm:px-6 relative z-10">
-        <div className="max-w-4xl mx-auto flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-xl sm:text-2xl font-display font-bold text-neon-gold text-neon-glow tracking-wide">
-            CINEMATCH
-          </h1>
-          <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+      <header className="sticky top-0 left-0 right-0 border-b border-brass/40 py-3 px-4 sm:py-4 sm:px-6 z-20 bg-cherry-950">
+        <div className="max-w-4xl mx-auto flex items-center justify-center gap-3 relative">
+          <div className="flex-1 min-w-0 flex items-center">
             {step > 1 && (
               <button
                 type="button"
                 onClick={() => setStep(1)}
-                className="flex items-center gap-1.5 min-h-[44px] px-3 py-2 rounded-lg border border-brass/50 text-cherry-600 text-sm hover:border-brass hover:text-brass-light transition-all touch-manipulation"
-                title="Back to start"
+                className="flex items-center gap-2 min-h-[44px] px-4 py-2 rounded-lg border-2 border-brass/50 text-brass-light hover:border-brass hover:bg-brass/10 transition-all touch-manipulation"
+                title="Home (step 1)"
               >
-                <RotateCcw className="w-4 h-4" />
-                Back to beginning
+                <Home className="w-4 h-4" />
+                Home
               </button>
             )}
-            <span className="text-cherry-600 text-sm">
-              Step {step} of {STEPS}
-            </span>
           </div>
+          <MarqueeLogo text="CINEMATCH" />
+          <div className="flex-1 min-w-0" aria-hidden />
         </div>
       </header>
 
-      <div className="h-1 bg-cherry-900">
+      <div className="h-1 bg-cherry-900 relative z-10">
         <motion.div
           className="h-full bg-brass"
           initial={false}
@@ -106,9 +102,32 @@ export default function RedCarpetWizard() {
         />
       </div>
 
-      <main className="flex-1 flex flex-col items-center justify-center px-4 py-8 sm:px-6 sm:py-12 relative z-10">
-        <div className="w-full max-w-2xl">
-          <AnimatePresence mode="wait">
+      <div className="px-4 sm:px-6 py-2 flex items-center justify-center gap-2 bg-cherry-950 border-b border-brass/40 relative z-10">
+        <span className="text-cream text-sm">
+          Step {step} of {STEPS}
+        </span>
+        <div className="flex items-center gap-1.5 ml-2" aria-hidden>
+          {Array.from({ length: STEPS }, (_, i) => (
+            <motion.span
+              key={i}
+              className={`inline-block w-2 h-2 rounded-full border border-brass/60 ${
+                i + 1 <= step ? 'bg-brass' : 'bg-cherry-900'
+              }`}
+              initial={false}
+              animate={{
+                opacity: i + 1 === step ? 1 : i + 1 < step ? 0.9 : 0.4,
+                scale: i + 1 === step ? 1.2 : 1,
+              }}
+              transition={{ duration: 0.35 }}
+            />
+          ))}
+        </div>
+      </div>
+
+      <main className="flex-1 min-h-0 flex flex-col relative z-10">
+        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center px-4 py-4 sm:px-6 sm:py-6">
+          <div className="w-full max-w-2xl">
+            <AnimatePresence mode="wait">
             {step === 1 && (
               <motion.div
                 key="step1"
@@ -203,25 +222,23 @@ export default function RedCarpetWizard() {
                 />
               </motion.div>
             )}
-          </AnimatePresence>
+            </AnimatePresence>
+          </div>
         </div>
 
-        <div className="flex items-center justify-between w-full max-w-2xl mt-8 sm:mt-14 gap-3 px-4 sm:px-0">
-          <button
-            type="button"
-            onClick={() => setStep((s) => Math.max(1, s - 1))}
-            disabled={step === 1}
-            className="flex items-center gap-2 min-h-[44px] px-5 py-3 rounded-lg border-2 border-brass/50 text-brass-light disabled:opacity-40 disabled:cursor-not-allowed hover:border-brass hover:bg-brass/10 transition-all touch-manipulation"
-          >
-            <ChevronLeft className="w-5 h-5" />
-            Back
-          </button>
-          {step === 1 && (
-            <div className="flex-1 flex justify-center">
-              <FilterLegend />
-            </div>
-          )}
-          {step < STEPS ? (
+        <div className="flex-shrink-0 sticky bottom-0 left-0 right-0 flex flex-col gap-2 pt-3 pb-5 sm:pb-6 px-4 sm:px-6 bg-cherry-950 border-t border-brass/40 z-20">
+          <div className="flex items-center justify-between w-full max-w-2xl mx-auto gap-3">
+            <button
+              type="button"
+              onClick={() => setStep((s) => Math.max(1, s - 1))}
+              disabled={step === 1}
+              className="flex items-center gap-2 min-h-[44px] px-5 py-3 rounded-lg border-2 border-brass/50 text-brass-light disabled:opacity-40 disabled:cursor-not-allowed hover:border-brass hover:bg-brass/10 transition-all touch-manipulation"
+            >
+              <ChevronLeft className="w-5 h-5" />
+              Back
+            </button>
+            <div className="flex-1" aria-hidden />
+            {step < STEPS ? (
             <button
               type="button"
               onClick={() => setStep((s) => s + 1)}
@@ -240,6 +257,7 @@ export default function RedCarpetWizard() {
               Find My Match
             </button>
           )}
+          </div>
         </div>
       </main>
     </div>

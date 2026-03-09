@@ -22,6 +22,10 @@ const config: Config = {
           dark: '#8b6914',
           muted: '#6b5a2d',
         },
+        cream: {
+          DEFAULT: '#e8e0d5',
+          light: '#f2ebe0',
+        },
         neon: {
           gold: '#ffd700',
           rose: '#ff6b9d',
@@ -43,14 +47,23 @@ const config: Config = {
         'neon-blue': '0 0 12px rgba(0, 212, 255, 0.7)',
         'projector': '0 0 60px 20px rgba(255, 215, 0, 0.15)',
       },
-      animation: {
-        'shimmer': 'shimmer 2s ease-in-out infinite',
-      },
       keyframes: {
         shimmer: {
           '0%, 100%': { opacity: '0.4' },
           '50%': { opacity: '1' },
         },
+        'marquee-glimmer': {
+          '0%, 100%': { opacity: '1', textShadow: '0 0 20px rgba(255,215,0,0.5), 0 0 40px rgba(255,215,0,0.3)' },
+          '50%': { opacity: '1', textShadow: '0 0 30px rgba(255,215,0,0.9), 0 0 60px rgba(255,215,0,0.5), 0 0 80px rgba(255,191,0,0.3)' },
+        },
+        'step-dot-in': {
+          '0%': { opacity: '0', transform: 'scale(0.5)' },
+          '100%': { opacity: '1', transform: 'scale(1)' },
+        },
+      },
+      animation: {
+        'shimmer': 'shimmer 2s ease-in-out infinite',
+        'marquee-glimmer': 'marquee-glimmer 2.5s ease-in-out infinite',
       },
     },
   },

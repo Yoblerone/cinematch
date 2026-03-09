@@ -41,7 +41,7 @@ function FilmFrameChip({
       className={`relative px-4 py-2.5 border-2 text-sm font-medium transition-all duration-300 rounded-sm before:absolute before:inset-0 before:rounded-sm before:border before:border-brass/40 before:pointer-events-none before:scale-[0.97] ${
         selected
           ? 'border-brass bg-brass/15 text-neon-gold shadow-[0_0_20px_rgba(184,134,11,0.4)]'
-          : 'border-brass/50 text-cherry-600 hover:border-brass hover:text-brass-light'
+          : 'border-brass/50 text-cream hover:border-brass hover:text-brass-light'
       }`}
     >
       <span className="relative z-10">{children}</span>
@@ -86,7 +86,7 @@ function OptionSectionWithRegenerate<T extends string>({
             <button
               type="button"
               onClick={onPrevious}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-brass/50 text-cherry-600 text-xs hover:border-brass hover:text-brass-light transition-all"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-brass/50 text-cream text-xs hover:border-brass hover:text-brass-light transition-all"
               title="Previous generation"
             >
               <Undo2 className="w-3.5 h-3.5" />
@@ -97,7 +97,7 @@ function OptionSectionWithRegenerate<T extends string>({
             <button
               type="button"
               onClick={onNext}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-brass/50 text-cherry-600 text-xs hover:border-brass hover:text-brass-light transition-all"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-brass/50 text-cream text-xs hover:border-brass hover:text-brass-light transition-all"
               title="Next generation"
             >
               <Redo2 className="w-3.5 h-3.5" />
@@ -107,7 +107,7 @@ function OptionSectionWithRegenerate<T extends string>({
           <button
             type="button"
             onClick={onRegenerate}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-brass/50 text-cherry-600 text-xs hover:border-brass hover:text-brass-light transition-all"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-brass/50 text-cream text-xs hover:border-brass hover:text-brass-light transition-all"
             title="Show new options (only ones not shown yet)"
           >
             <RefreshCw className="w-3.5 h-3.5" />
@@ -116,7 +116,7 @@ function OptionSectionWithRegenerate<T extends string>({
         </div>
       </div>
       {currentLabel && (
-        <p className="text-xs text-cherry-600">Showing: {currentLabel}</p>
+        <p className="text-xs text-cream">Showing: {currentLabel}</p>
       )}
       <div className="flex flex-wrap gap-2">
         {currentOptions.map((v) => (

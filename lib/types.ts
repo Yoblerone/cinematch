@@ -200,6 +200,8 @@ export interface Movie {
   popularity?: number;
   /** TMDB vote_count (for Cult Signature: devotion range 1k–15k). */
   voteCount?: number;
+  /** IMDB id (e.g. "tt0137523") for linking to https://www.imdb.com/title/{imdbId}/ */
+  imdbId?: string | null;
 }
 
 /** Max genres user can select (TMDB discover uses OR). */

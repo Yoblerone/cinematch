@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Palette, Music, Tag, Undo2, Redo2 } from 'lucide-react';
+import { Palette, Music, Tag, ChevronLeft, ChevronRight } from 'lucide-react';
+import { RankIcon } from '../FilterTypeIcon';
 import type { VisualStyle, Soundtrack, Theme } from '@/lib/types';
 import {
   VISUAL_STYLE_SETS,
@@ -35,7 +36,7 @@ function FilmFrameChip({
       className={`relative w-full min-w-0 sm:min-w-[7.5rem] max-w-[11rem] h-10 px-3 py-2 border-2 text-sm font-medium transition-all duration-300 rounded-sm truncate before:absolute before:inset-0 before:rounded-sm before:border before:border-brass/40 before:pointer-events-none before:scale-[0.97] touch-manipulation ${
         selected
           ? 'border-brass bg-brass/15 text-neon-gold shadow-[0_0_20px_rgba(184,134,11,0.4)]'
-          : 'border-brass/50 text-cherry-600 hover:border-brass hover:text-brass-light'
+          : 'border-brass/50 text-cream hover:border-brass hover:text-brass-light'
       }`}
     >
       <span className="relative z-10 block truncate text-left">{children}</span>
@@ -46,6 +47,7 @@ function FilmFrameChip({
 function OptionSection<T extends string>({
   title,
   icon: Icon,
+  typeIcon,
   allSets,
   currentIndex,
   selected,
@@ -55,6 +57,7 @@ function OptionSection<T extends string>({
 }: {
   title: string;
   icon: React.ElementType;
+  typeIcon?: React.ReactNode;
   allSets: T[][];
   currentIndex: number;
   selected: T[];
@@ -73,39 +76,40 @@ function OptionSection<T extends string>({
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2 text-brass-light">
           <Icon className="w-5 h-5" />
+          {typeIcon}
           <span className="font-medium">{title}</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={onPrevious}
             disabled={!canGoPrevious}
-            className={`flex items-center gap-1.5 min-h-[44px] px-3 py-2 rounded border text-xs transition-all touch-manipulation ${
+            className={`p-2 rounded-lg border transition-all touch-manipulation ${
               canGoPrevious
-                ? 'border-brass/50 text-cherry-600 hover:border-brass hover:text-brass-light'
-                : 'border-brass/30 text-cherry-700/50 cursor-not-allowed opacity-50'
+                ? 'border-brass/50 text-cream hover:border-brass hover:text-brass-light'
+                : 'border-brass/30 text-cream/70 cursor-not-allowed opacity-50'
             }`}
             title="Previous set"
+            aria-label="Previous set"
           >
-            <Undo2 className="w-3.5 h-3.5" />
-            Previous
+            <ChevronLeft className="w-5 h-5" />
           </button>
-          <span className="text-xs text-cherry-600 tabular-nums">
+          <span className="text-xs text-cream tabular-nums min-w-[2.5rem] text-center">
             {safeIndex + 1} / {total}
           </span>
           <button
             type="button"
             onClick={onNext}
             disabled={!canGoNext}
-            className={`flex items-center gap-1.5 min-h-[44px] px-3 py-2 rounded border text-xs transition-all touch-manipulation ${
+            className={`p-2 rounded-lg border transition-all touch-manipulation ${
               canGoNext
-                ? 'border-brass/50 text-cherry-600 hover:border-brass hover:text-brass-light'
-                : 'border-brass/30 text-cherry-700/50 cursor-not-allowed opacity-50'
+                ? 'border-brass/50 text-cream hover:border-brass hover:text-brass-light'
+                : 'border-brass/30 text-cream/70 cursor-not-allowed opacity-50'
             }`}
             title="Next set"
+            aria-label="Next set"
           >
-            Next
-            <Redo2 className="w-3.5 h-3.5" />
+            <ChevronRight className="w-5 h-5" />
           </button>
         </div>
       </div>
@@ -144,13 +148,11 @@ export default function Step4Aesthetic({
           The Aesthetic
         </h2>
       </div>
-      <div className="rounded-lg border-l-2 border-brass/60 bg-cherry-900/60 px-3 py-2 mb-6 max-w-3xl mx-auto">
-        <p className="text-sm text-brass-light/95">Theme, visual style, and soundtrack don’t exclude movies—they boost ranking. Picks that match your tags appear higher in the list.</p>
-      </div>
       <div className="scroll-area-slate space-y-6 max-w-3xl mx-auto max-h-[65vh] overflow-y-auto">
         <OptionSection
           title="Theme / Mood"
           icon={Tag}
+          typeIcon={<RankIcon />}
           allSets={THEME_SETS}
           currentIndex={themeIndex}
           selected={theme}
@@ -162,6 +164,7 @@ export default function Step4Aesthetic({
         <OptionSection
           title="Visual Style"
           icon={Palette}
+          typeIcon={<RankIcon />}
           allSets={VISUAL_STYLE_SETS}
           currentIndex={visualIndex}
           selected={visualStyle}
@@ -173,6 +176,7 @@ export default function Step4Aesthetic({
         <OptionSection
           title="Soundtrack"
           icon={Music}
+          typeIcon={<RankIcon />}
           allSets={SOUNDTRACK_SETS}
           currentIndex={soundtrackIndex}
           selected={soundtrack}

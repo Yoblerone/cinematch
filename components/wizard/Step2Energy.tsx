@@ -1,6 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
+import { RankIcon } from '../FilterTypeIcon';
 
 const sliders = [
   { key: 'pacing' as const, label: 'Pacing', low: 'Slow Burn', high: 'Breakneck' },
@@ -42,10 +43,7 @@ export default function Step2Energy({
         <h2 className="text-3xl font-display font-semibold text-neon-gold text-neon-glow mb-2">
           The Energy & Emotion
         </h2>
-        <p className="text-cherry-600 text-sm">Set the vibe</p>
-      </div>
-      <div className="rounded-lg border-l-2 border-brass/60 bg-cherry-900/60 px-3 py-2 mb-6 max-w-xl mx-auto">
-        <p className="text-sm text-brass-light/95">Sliders rank results: movies closer to your setting score higher and appear first. They don’t exclude movies.</p>
+        <p className="text-cream text-sm">Set the vibe</p>
       </div>
       <div className="scroll-area-slate space-y-6 max-w-xl mx-auto max-h-[55vh] overflow-y-auto">
         {sliders.map((slider) => {
@@ -53,8 +51,8 @@ export default function Step2Energy({
           return (
             <div key={key} className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="font-medium text-brass-light">{label}</span>
-                <span className="text-cherry-600 text-sm">{values[key]}</span>
+                <span className="font-medium text-brass-light flex items-center gap-1.5"><RankIcon /> {label}</span>
+                <span className="text-cream text-sm">{values[key]}</span>
               </div>
               <input
                 type="range"
@@ -64,7 +62,7 @@ export default function Step2Energy({
                 onChange={(e) => onChange(key, Number(e.target.value))}
                 className="w-full"
               />
-              <div className="flex justify-between text-xs text-cherry-600">
+              <div className="flex justify-between text-xs text-cream">
                 <span>{low}</span>
                 <span>{high}</span>
               </div>

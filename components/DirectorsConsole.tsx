@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SlidersHorizontal, X, Plus, Minus, RotateCw, Film, Zap, Palette, Award } from 'lucide-react';
 import FilterLegend from './FilterLegend';
@@ -56,7 +56,7 @@ function ChipRow<T extends string>({
               type="button"
               onClick={() => onToggle(opt)}
               className={`px-3 py-1.5 rounded border text-sm ${
-                selected ? 'border-brass bg-brass/20 text-neon-gold' : 'border-brass/50 text-cherry-600'
+                selected ? 'border-brass bg-brass/20 text-neon-gold' : 'border-brass/50 text-cream'
               }`}
             >
               {opt}
@@ -67,7 +67,7 @@ function ChipRow<T extends string>({
           <button
             type="button"
             onClick={onExpandToggle}
-            className="flex items-center justify-center w-8 h-8 rounded border border-brass/50 text-cherry-600 hover:border-brass hover:text-brass-light transition-all"
+            className="flex items-center justify-center w-8 h-8 rounded border border-brass/50 text-cream hover:border-brass hover:text-brass-light transition-all"
             aria-label={expanded ? 'Show less' : 'Show more'}
             title={expanded ? 'Show less' : 'Show more'}
           >
@@ -123,12 +123,22 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
     onOpenChange?.(false);
   };
 
+  useEffect(() => {
+    if (open) {
+      const prev = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = prev;
+      };
+    }
+  }, [open]);
+
   return (
     <>
       <motion.button
         type="button"
         onClick={openModal}
-        className="fixed bottom-6 right-6 z-[45] flex items-center gap-2 px-5 py-3 rounded-xl border-2 border-brass bg-cherry-900/95 text-neon-gold shadow-brass hover:bg-brass/20 transition-all font-medium"
+        className="fixed bottom-6 right-6 z-[45] flex items-center gap-2 px-5 py-3 rounded-xl border-2 border-brass bg-cherry-900 text-neon-gold shadow-brass hover:bg-brass/20 transition-all font-medium"
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}
         aria-label="Open Director's Slate"
@@ -217,7 +227,7 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                               else onUpdate({ decade: [...filters.decade.filter((d) => d != null), value] });
                             }}
                             className={`px-3 py-1.5 rounded border text-sm ${
-                              selected ? 'border-brass bg-brass/20 text-neon-gold' : 'border-brass/50 text-cherry-600'
+                              selected ? 'border-brass bg-brass/20 text-neon-gold' : 'border-brass/50 text-cream'
                             }`}
                           >
                             {label}
@@ -235,7 +245,7 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                           type="button"
                           onClick={() => onUpdate({ runtime: v })}
                           className={`px-3 py-1.5 rounded border text-sm ${
-                            filters.runtime === v ? 'border-brass bg-brass/20 text-neon-gold' : 'border-brass/50 text-cherry-600'
+                            filters.runtime === v ? 'border-brass bg-brass/20 text-neon-gold' : 'border-brass/50 text-cream'
                           }`}
                         >
                           {v == null ? 'Any' : v === 'short' ? 'Short (<90 min)' : v === 'medium' ? 'Medium (90–150 min)' : 'Long (2.5 hr+)'}
@@ -248,7 +258,7 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
 
                   {/* Energy & emotion – sliders affect ranking only; closer match = higher in results */}
                   <Section title="Energy & emotion" icon={Zap}>
-                    <div className="mb-4 rounded-lg border-l-2 border-brass/60 bg-cherry-900/60 px-3 py-2">
+                    <div className="mb-4 rounded-lg border-l-2 border-brass/60 bg-cherry-900 px-3 py-2">
                       <p className="text-sm text-brass-light/95">Sliders rank results: movies closer to your setting score higher and appear first. They don’t exclude movies.</p>
                     </div>
                     <div className="grid sm:grid-cols-2 gap-4">
@@ -256,7 +266,7 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                     <div key={key} className="space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="font-medium text-brass-light text-sm flex items-center gap-1.5"><RankIcon /> {label}</span>
-                        <span className="text-cherry-600 text-sm">{filters[key]}</span>
+                        <span className="text-cream text-sm">{filters[key]}</span>
                       </div>
                       <input
                         type="range"
@@ -266,7 +276,7 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                         onChange={(e) => onUpdate({ [key]: Number(e.target.value) })}
                         className="w-full"
                       />
-                      <div className="flex justify-between text-xs text-cherry-600">
+                      <div className="flex justify-between text-xs text-cream">
                         <span>{low}</span>
                         <span>{high}</span>
                       </div>
@@ -277,7 +287,7 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
 
                   {/* Aesthetic – theme, visual style, soundtrack: scoring-only; matches rank higher */}
                   <Section title="Aesthetic" icon={Palette}>
-                    <div className="mb-4 rounded-lg border-l-2 border-brass/60 bg-cherry-900/60 px-3 py-2">
+                    <div className="mb-4 rounded-lg border-l-2 border-brass/60 bg-cherry-900 px-3 py-2">
                       <p className="text-sm text-brass-light/95">Theme, visual style, and soundtrack don’t exclude movies—they boost ranking. Picks that match your tags appear higher in the list.</p>
                     </div>
                     <div className="grid sm:grid-cols-2 gap-6">
@@ -328,6 +338,7 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                     expanded={expandedSoundtrack}
                     onExpandToggle={() => setExpandedSoundtrack((e) => !e)}
                     label="Soundtrack"
+                    icon={<RankIcon />}
                   />
                     </div>
                   </Section>
@@ -344,7 +355,7 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                           type="button"
                           onClick={() => onUpdate({ cultClassic: v })}
                           className={`px-3 py-1.5 rounded border text-sm ${
-                            filters.cultClassic === v ? 'border-brass bg-brass/20 text-neon-gold' : 'border-brass/50 text-cherry-600'
+                            filters.cultClassic === v ? 'border-brass bg-brass/20 text-neon-gold' : 'border-brass/50 text-cream'
                           }`}
                         >
                           {v == null ? 'Any' : v ? 'Yes' : 'No'}
@@ -353,7 +364,7 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-brass-light mb-2">A-List Cast</label>
+                    <label className="block text-sm font-medium text-brass-light mb-2 flex items-center gap-1.5"><FilterIcon /> A-List Cast</label>
                     <div className="flex gap-2">
                       {([null, true, false] as const).map((v) => (
                         <button
@@ -361,7 +372,7 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                           type="button"
                           onClick={() => onUpdate({ aListCast: v })}
                           className={`px-3 py-1.5 rounded border text-sm ${
-                            filters.aListCast === v ? 'border-brass bg-brass/20 text-neon-gold' : 'border-brass/50 text-cherry-600'
+                            filters.aListCast === v ? 'border-brass bg-brass/20 text-neon-gold' : 'border-brass/50 text-cream'
                           }`}
                         >
                           {v == null ? 'Any' : v ? 'Yes' : 'No'}
@@ -381,7 +392,7 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                             type="button"
                             onClick={() => onUpdate({ criticsVsFans: v })}
                             className={`px-3 py-1.5 rounded border text-sm ${
-                              selected ? 'border-brass bg-brass/20 text-neon-gold' : 'border-brass/50 text-cherry-600'
+                              selected ? 'border-brass bg-brass/20 text-neon-gold' : 'border-brass/50 text-cream'
                             }`}
                           >
                             {opt === 'any' ? 'Any' : opt === 'both' ? 'Both' : opt === 'critics' ? 'Critics' : 'Fans'}
@@ -391,17 +402,17 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-brass-light mb-2">Academy Awards</label>
+                    <label className="block text-sm font-medium text-brass-light mb-2 flex items-center gap-1.5"><FilterIcon /> Academy Awards</label>
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs text-cherry-600">Best Picture winner:</span>
+                        <span className="text-xs text-cream">Best Picture winner:</span>
                         {([null, true, false] as const).map((v) => (
                           <button
                             key={`winner-${String(v)}`}
                             type="button"
                             onClick={() => onUpdate({ oscarWinner: v })}
                             className={`px-3 py-1.5 rounded border text-sm ${
-                              filters.oscarWinner === v ? 'border-brass bg-brass/20 text-neon-gold' : 'border-brass/50 text-cherry-600'
+                              filters.oscarWinner === v ? 'border-brass bg-brass/20 text-neon-gold' : 'border-brass/50 text-cream'
                             }`}
                           >
                             {v == null ? 'Any' : v ? 'Yes' : 'No'}
@@ -409,14 +420,14 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                         ))}
                       </div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs text-cherry-600">Best Picture nominee:</span>
+                        <span className="text-xs text-cream">Best Picture nominee:</span>
                         {([null, true, false] as const).map((v) => (
                           <button
                             key={`nominee-${String(v)}`}
                             type="button"
                             onClick={() => onUpdate({ oscarNominee: v })}
                             className={`px-3 py-1.5 rounded border text-sm ${
-                              filters.oscarNominee === v ? 'border-brass bg-brass/20 text-neon-gold' : 'border-brass/50 text-cherry-600'
+                              filters.oscarNominee === v ? 'border-brass bg-brass/20 text-neon-gold' : 'border-brass/50 text-cream'
                             }`}
                           >
                             {v == null ? 'Any' : v ? 'Yes' : 'No'}
@@ -428,7 +439,7 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                   <div className="space-y-2 sm:col-span-2">
                     <div className="flex items-center justify-between">
                       <label className="font-medium text-brass-light text-sm flex items-center gap-1.5"><RankIcon /> Director prominence</label>
-                      <span className="text-cherry-600 text-sm">{filters.directorProminence}</span>
+                      <span className="text-cream text-sm">{filters.directorProminence}</span>
                     </div>
                     <input
                       type="range"
@@ -438,7 +449,7 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                       onChange={(e) => onUpdate({ directorProminence: Number(e.target.value) })}
                       className="w-full"
                     />
-                    <div className="flex justify-between text-xs text-cherry-600">
+                    <div className="flex justify-between text-xs text-cream">
                       <span>Any</span>
                       <span>Household names</span>
                     </div>

@@ -30,8 +30,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${playfair.variable} ${dmSans.variable}`}>
-      <body className="font-sans antialiased bg-cherry-950 text-[#f5e6e8]">
-        {children}
+      <body className="font-sans antialiased bg-cherry-950 text-[#f5e6e8] min-h-screen flex flex-col">
+        <div className="flex-1 min-h-screen border-2 border-double border-brass/80">
+          {children}
+        </div>
       </body>
     </html>
   );

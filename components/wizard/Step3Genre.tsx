@@ -21,7 +21,7 @@ function FilmFrameChip({
       className={`relative px-4 py-2.5 border-2 text-sm font-medium transition-all duration-300 rounded-sm before:absolute before:inset-0 before:rounded-sm before:border before:border-brass/40 before:pointer-events-none before:scale-[0.97] ${
         selected
           ? 'border-brass bg-brass/15 text-neon-gold shadow-[0_0_20px_rgba(184,134,11,0.4)]'
-          : 'border-brass/50 text-cherry-600 hover:border-brass hover:text-brass-light'
+          : 'border-brass/50 text-cream hover:border-brass hover:text-brass-light'
       }`}
     >
       <span className="relative z-10">{children}</span>
@@ -46,7 +46,7 @@ export default function Step3Genre({ genre, onGenreChange }: Step3GenreProps) {
         <h2 className="text-3xl font-display font-semibold text-neon-gold text-neon-glow mb-2">
           Genre
         </h2>
-        <p className="text-cherry-600 text-sm">What kind of film?</p>
+        <p className="text-cream text-sm">What kind of film?</p>
       </div>
       <div className="flex flex-wrap justify-center gap-3 max-w-2xl mx-auto">
         <FilmFrameChip selected={genre === null} onClick={() => onGenreChange(null)}>

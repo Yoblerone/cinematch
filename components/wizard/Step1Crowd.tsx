@@ -27,7 +27,7 @@ export default function Step1Crowd({ value, onChange }: Step1CrowdProps) {
         <h2 className="text-3xl font-display font-semibold text-neon-gold text-neon-glow mb-2">
           The Crowd
         </h2>
-        <p className="text-cherry-600 text-sm">Who&apos;s watching?</p>
+        <p className="text-cream text-sm">Who&apos;s watching?</p>
       </div>
       <div className="flex flex-wrap justify-center gap-4">
         {options.map(({ value: optValue, label, icon: Icon }) => (
@@ -39,7 +39,7 @@ export default function Step1Crowd({ value, onChange }: Step1CrowdProps) {
               flex items-center gap-3 px-8 py-5 rounded-lg border-2 transition-all duration-300
               ${value === optValue
                 ? 'border-brass bg-brass/10 text-neon-gold shadow-brass'
-                : 'border-brass/50 bg-cherry-900/50 text-cherry-600 hover:border-brass hover:text-brass-light'
+                : 'border-brass/50 bg-cherry-900 text-cream hover:border-brass hover:text-brass-light'
               }
             `}
           >
