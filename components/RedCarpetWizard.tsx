@@ -11,6 +11,7 @@ import Step4Aesthetic from './wizard/Step4Aesthetic';
 import Step4Pedigree from './wizard/Step4Pedigree';
 import ResultsView from './ResultsView';
 import SparkleBackground from './SparkleBackground';
+import FilterLegend from './FilterLegend';
 import MarqueeLogo from './MarqueeLogo';
 
 const STEPS = 4;
@@ -237,7 +238,9 @@ export default function RedCarpetWizard() {
               <ChevronLeft className="w-5 h-5" />
               Back
             </button>
-            <div className="flex-1" aria-hidden />
+            <div className="flex-1 flex justify-center">
+              <FilterLegend />
+            </div>
             {step < STEPS ? (
             <button
               type="button"
