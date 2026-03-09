@@ -132,6 +132,7 @@ export interface TmdbMovieDetails {
   vote_average: number;
   vote_count: number;
   popularity?: number;
+  poster_path: string | null;
   overview: string | null;
   tagline: string | null;
   runtime: number | null;
