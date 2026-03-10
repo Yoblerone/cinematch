@@ -5,6 +5,7 @@
  * Chicago (2002) is 1574; 424 is Schindler's List (1993).
  */
 const OSCAR_BEST_PICTURE_TMDB_IDS = new Set<number>([
+  872585,  // Oppenheimer (2023)
   496243,  // Parasite (2020)
   490132,  // Green Book (2019)
   399579,  // The Shape of Water (2018)
@@ -38,6 +39,8 @@ const OSCAR_BEST_PICTURE_TMDB_IDS = new Set<number>([
   12102,   // Rain Man (1988)
   4248,    // The Last Emperor (1987)
   11886,   // Platoon (1986)
+  238,     // The Godfather (1972)
+  240,     // The Godfather Part II (1974)
 ]);
 
 /** Best Picture nominees that did *not* win (winners are in OSCAR_BEST_PICTURE_TMDB_IDS). Expand as needed. */

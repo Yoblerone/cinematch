@@ -12,15 +12,19 @@ export async function POST(request: NextRequest) {
   }
 
   let filters: FilterState;
+  let discoverStartPage: number | undefined;
   try {
     const body = await request.json();
     filters = body as FilterState;
+    discoverStartPage = typeof body.discoverStartPage === 'number' && body.discoverStartPage >= 1 && body.discoverStartPage <= 10
+      ? Math.floor(body.discoverStartPage)
+      : undefined;
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
   try {
-    const movies = await getTmdbMatches(apiKey, filters);
+    const movies = await getTmdbMatches(apiKey, filters, { discoverStartPage });
     return NextResponse.json({ movies });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);

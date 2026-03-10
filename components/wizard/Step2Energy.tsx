@@ -1,7 +1,6 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { RankIcon } from '../FilterTypeIcon';
 
 const sliders = [
   { key: 'pacing' as const, label: 'Pacing', low: 'Slow Burn', high: 'Breakneck' },
@@ -51,7 +50,7 @@ export default function Step2Energy({
           return (
             <div key={key} className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="font-medium text-brass-light flex items-center gap-1.5"><RankIcon /> {label}</span>
+                <span className="font-medium text-brass-light">{label}</span>
                 <span className="text-cream text-sm">{values[key]}</span>
               </div>
               <input

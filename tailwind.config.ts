@@ -16,6 +16,7 @@ const config: Config = {
           700: '#6b1a22',
           600: '#8b2230',
         },
+        burgundy: '#800020',
         brass: {
           DEFAULT: '#b8860b',
           light: '#d4a84b',
@@ -26,6 +27,7 @@ const config: Config = {
           DEFAULT: '#e8e0d5',
           light: '#f2ebe0',
         },
+        antique: '#f5f5dc',
         neon: {
           gold: '#ffd700',
           rose: '#ff6b9d',

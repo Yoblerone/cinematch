@@ -1,67 +1,46 @@
 export type CrowdType = 'Solo' | 'Date Night' | 'Group';
 
+/** 18 Visual Moods (TMDB keyword–driven ranking). */
 export type VisualStyle =
-  | 'Film Noir'
-  | 'Vibrant'
-  | 'Gritty'
-  | 'Symmetric'
-  | 'Documentary-style'
-  | 'Period'
+  | 'Noir Shadows'
+  | 'Neon Dystopia'
+  | 'Found Footage'
+  | 'Technicolor Dream'
+  | 'Symmetric Frames'
+  | 'Gritty Realism'
+  | 'Wide Scope Epic'
+  | 'Gothic Horror'
+  | 'Retro Grain'
+  | 'One-Take'
+  | 'Handheld Kinetic'
+  | 'Pop Art'
   | 'High Contrast'
-  | 'Vintage'
-  | 'Wide Scope'
-  | 'Claustrophobic'
-  | 'Natural Light'
-  | 'Neon-lit'
-  | 'Desaturated'
+  | 'Period'
   | 'Warm Tones'
   | 'Cold Tones'
-  | 'Single Location'
-  | 'Road Movie'
-  | 'Anthology'
-  | 'Black and White'
-  | 'Handheld'
-  | 'Animated'
-  | 'Stop Motion'
-  | 'Split Screen'
-  | 'One Take'
-  | 'Found Footage'
-  | 'Surreal'
-  | 'Minimalist'
   | 'Saturated'
-  | 'Golden Hour'
-  | 'Night'
-  | 'Underwater'
   | 'Aerial';
 
+/** 18 Sound Profile tags (TMDB keyword–driven ranking). */
 export type Soundtrack =
-  | 'Iconic Score'
-  | 'Classic Songs'
-  | 'Electronic'
+  | 'Sweeping Orchestral'
+  | 'The Modern Pulse'
+  | 'Vintage/Analog'
+  | 'Intimate/Acoustic'
+  | 'Experimental'
   | 'Jazz'
   | 'Orchestral'
-  | 'Minimal'
-  | 'Hip-Hop & R&B'
-  | 'Rock & Guitar'
-  | 'Piano-led'
-  | 'Choir & Strings'
   | 'Ambient'
-  | 'Latin'
-  | 'Folk & Americana'
-  | 'No Score'
-  | 'Diegetic Only'
-  | 'Musical Numbers'
-  | 'Sound Design Heavy'
-  | 'Classical'
   | 'Synth'
-  | 'Country'
-  | 'Blues'
   | 'World Music'
-  | 'Opera'
   | 'Acoustic'
   | 'Percussion-heavy'
+  | 'Vocal-led'
+  | 'Minimal'
+  | 'Classical'
   | 'Silent'
-  | 'Vocal-led';
+  | 'No Score'
+  | 'Diegetic Only';
 
 // TMDB genre list (with_genres) - includes Family
 export type Genre =
@@ -84,82 +63,26 @@ export type Genre =
   | 'War'
   | 'Western';
 
-// TMDB keywords (with_keywords) - theme/mood tags; expanded for TMDB-style discover
+/** 18 Theme/Mood tags (TMDB keyword–driven ranking). Cult Classic can also match budget/revenue/year. */
 export type Theme =
-  | 'Coming of Age'
-  | 'Revenge'
-  | 'Heist'
-  | 'Dystopia'
-  | 'Time Travel'
-  | 'Road Trip'
+  | 'Cult Classic'
+  | 'Adrenaline'
+  | 'Speculative'
+  | 'The Dark Side'
+  | 'Human Condition'
   | 'Based on True Story'
   | 'Twist Ending'
-  | 'Dysfunctional Family'
+  | 'Road Trip'
   | 'Fish out of Water'
   | 'Against the Clock'
-  | 'Noir'
-  | 'Love Triangle'
-  | 'Quest'
-  | 'Survival'
   | 'Identity Crisis'
-  | 'Redemption'
-  | 'Escape'
-  | 'Betrayal'
-  | 'Found Family'
-  | 'Multiverse'
-  | 'Murder'
-  | 'Detective'
-  | 'Conspiracy'
-  | 'Secret Identity'
-  | 'Alien'
-  | 'Robot'
-  | 'Superhero'
-  | 'Vampire'
-  | 'Zombie'
-  | 'Ghost'
-  | 'Witch'
-  | 'Prison'
-  | 'School'
-  | 'Wedding'
-  | 'Christmas'
-  | 'Sports'
-  | 'Music'
-  | 'Dance'
-  | 'Art'
-  | 'Politics'
-  | 'War'
-  | 'Terrorism'
-  | 'Kidnapping'
-  | 'Hostage'
-  | 'Bank Robbery'
-  | 'Assassin'
-  | 'Spy'
-  | 'Double Cross'
-  | 'Corruption'
-  | 'Courtroom'
-  | 'Mistaken Identity'
-  | 'Amnesia'
-  | 'Serial Killer'
-  | 'Haunted House'
-  | 'Apocalypse'
-  | 'Space'
-  | 'Underdog'
-  | 'Rivalry'
-  | 'Friendship'
-  | 'Loss'
-  | 'Grief'
-  | 'Addiction'
-  | 'Mental Illness'
-  | 'Immigration'
-  | 'Racism'
-  | 'LGBTQ+'
-  | 'Feminism'
-  | 'Religion'
-  | 'Philosophy'
-  | 'Nature'
-  | 'Animal'
-  | 'Ocean'
-  | 'Island';
+  | 'Whimsical'
+  | 'Heartfelt'
+  | 'Cynical'
+  | 'Philosophical'
+  | 'Satirical'
+  | 'Surreal'
+  | 'Melancholy';
 
 export type CriticsVsFans = 'critics' | 'fans' | 'both';
 
@@ -190,6 +113,8 @@ export interface Movie {
   budget: number;
   rating: number;
   hasAListCast: boolean;
+  /** Star power score for ranking: 0 (no A-List in top 5), 30 (1–2 A-List), 100 (3+ A-List). A-List = TMDB person popularity > 50. */
+  starPowerScore?: number;
   criticsVsFans: CriticsVsFans;
   oscarWinner: boolean;
   oscarNominee: boolean;
@@ -221,14 +146,19 @@ export interface FilterState {
   visualStyle: VisualStyle[];
   soundtrack: Soundtrack[];
   cultClassic: boolean | null;
-  aListCast: boolean | null;
+  /** When true, star power is ignored (slider disabled). When false, aListCast 0–100 ranks by star power. */
+  aListCastAny: boolean;
+  /** 0–100; only used when aListCastAny is false. 100 = highest star power first, 0 = lowest (indie ensembles) first. */
+  aListCast: number;
   criticsVsFans: CriticsVsFans | null;
-  oscarWinner: boolean | null;
-  oscarNominee: boolean | null;
+  /** Any = no filter. Nominee = filter to Oscar nominee OR winner. Winner = same filter + sort winners first. */
+  oscarFilter: 'any' | 'nominee' | 'winner';
   /** Multiple decades; empty = any. Date range spans min–max. */
   decade: Decade[];
   runtime: Runtime;
-  /** 0 = any director; 1–100 = minimum director prominence (TMDB person popularity) */
+  /** When true, prominence is ignored (slider disabled). When false, directorProminence 0–100 is used for API and ranking. */
+  directorProminenceAny: boolean;
+  /** 0–100; only used when directorProminenceAny is false. */
   directorProminence: number;
 }
 
@@ -245,11 +175,12 @@ export const defaultFilters: FilterState = {
   visualStyle: [],
   soundtrack: [],
   cultClassic: null,
-  aListCast: null,
+  aListCastAny: true,
+  aListCast: 50,
   criticsVsFans: null,
-  oscarWinner: null,
-  oscarNominee: null,
+  oscarFilter: 'any',
   decade: [],
   runtime: null,
-  directorProminence: 0,
+  directorProminenceAny: true,
+  directorProminence: 50,
 };

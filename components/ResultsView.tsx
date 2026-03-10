@@ -2,12 +2,47 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Home, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Home, ChevronLeft, ChevronRight, Dices } from 'lucide-react';
 import type { FilterState, Movie } from '@/lib/types';
 import MovieCard from './MovieCard';
 import DirectorsConsole from './DirectorsConsole';
 import SparkleBackground from './SparkleBackground';
 import MarqueeLogo from './MarqueeLogo';
+
+/** Vintage film reel: static flanges and hub; only the six circular windows rotate. */
+function VintageFilmReel({ className }: { className?: string }) {
+  const cx = 32;
+  const cy = 32;
+  const holeRadius = 5;
+  const holeDistance = 14;
+  const sixAngles = [0, 60, 120, 180, 240, 300];
+
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 64 64"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      stroke="#F5F5DC"
+      strokeWidth="1.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx={cx} cy={cy} r="28" />
+      <circle cx={cx} cy={cy} r="20" />
+      <circle cx={cx} cy={cy} r="6" />
+      <circle cx={cx} cy={cy} r="2" fill="#1a0608" stroke="#F5F5DC" strokeWidth="1" />
+      <g className="spin-reel">
+        {sixAngles.map((deg) => {
+          const rad = (deg * Math.PI) / 180;
+          const x = cx + holeDistance * Math.cos(rad);
+          const y = cy + holeDistance * Math.sin(rad);
+          return <circle key={deg} cx={x} cy={y} r={holeRadius} fill="none" />;
+        })}
+      </g>
+    </svg>
+  );
+}
 
 const RESULTS_PAGE_SIZE = 9;
 
@@ -20,6 +55,9 @@ interface ResultsViewProps {
   error: string | null;
   /** Re-fetch results with current filters (e.g. from Director&apos;s Slate). */
   onRefresh?: () => void;
+  /** Chaos Mode: random filters + random page. */
+  onSurpriseMe?: () => void;
+  rollingDice?: boolean;
 }
 
 export default function ResultsView({
@@ -30,6 +68,8 @@ export default function ResultsView({
   loading,
   error,
   onRefresh,
+  onSurpriseMe,
+  rollingDice = false,
 }: ResultsViewProps) {
   const [isSlateOpen, setIsSlateOpen] = useState(false);
   const [resultsOffset, setResultsOffset] = useState(0);
@@ -56,61 +96,49 @@ export default function ResultsView({
   return (
     <div className="min-h-screen bg-cherry-950 relative">
       <SparkleBackground currentStep={5} />
-      <header className="sticky top-0 left-0 right-0 border-b border-brass/40 py-3 px-4 sm:py-4 sm:px-6 z-30 bg-cherry-950">
-        <div className="max-w-4xl mx-auto flex items-center justify-center gap-3 relative">
-          <div className="flex-1 min-w-0 flex items-center">
-            <button
-              type="button"
-              onClick={onBackToWizard}
-              className="flex items-center gap-2 min-h-[44px] px-4 py-2 rounded-lg border-2 border-brass/50 text-brass-light hover:border-brass hover:bg-brass/10 transition-all touch-manipulation"
-            >
-              <Home className="w-4 h-4" />
-              Home
-            </button>
-          </div>
-          <MarqueeLogo text="CINEMATCH" />
-          <div className="flex-1 min-w-0 flex items-center justify-end gap-1.5 flex-shrink-0 flex-wrap">
-            {results.length > 0 && (
-              <>
-                <span className="text-cream text-sm tabular-nums mr-1">{pageLabel}</span>
+      <div className="sticky top-0 left-0 right-0 z-30 bg-cherry-950">
+        <header className="border-b border-brass/40 py-3 px-4 sm:py-4 sm:px-6">
+          <div className="w-full grid grid-cols-[1fr_auto_1fr] items-center gap-4">
+            <div className="flex justify-center min-w-0">
+              <button
+                type="button"
+                onClick={onBackToWizard}
+                className="flex items-center gap-1.5 min-h-[36px] px-3 py-1.5 rounded-sm border-2 border-brass/50 text-brass-light hover:border-brass hover:bg-brass/10 transition-all touch-manipulation text-sm font-medium"
+              >
+                <Home className="w-3.5 h-3.5" />
+                Home
+              </button>
+            </div>
+            <div className="flex justify-center shrink-0">
+              <MarqueeLogo text="CINEMATCH" />
+            </div>
+            <div className="flex justify-center min-w-0">
+              {onSurpriseMe && (
                 <button
                   type="button"
-                  onClick={() => setResultsOffset((o) => Math.max(0, o - 1))}
-                  disabled={!hasPrevious}
-                  className="p-2 rounded-lg border border-brass/50 text-brass-light hover:border-brass hover:bg-brass/10 disabled:opacity-40 disabled:cursor-not-allowed transition-all touch-manipulation"
-                  title="Previous page"
-                  aria-label="Previous page"
+                  onClick={onSurpriseMe}
+                  disabled={rollingDice || loading}
+                  className="flex items-center gap-1.5 min-h-[36px] px-3 py-1.5 rounded-sm border-2 border-brass/50 text-brass-light hover:border-brass hover:bg-brass/10 transition-all touch-manipulation disabled:opacity-60 disabled:cursor-not-allowed text-sm font-medium"
+                  title="Surprise Me (Chaos Mode)"
                 >
-                  <ChevronLeft className="w-5 h-5" />
+                  <Dices className={`w-3.5 h-3.5 ${rollingDice ? 'animate-pulse' : ''}`} aria-hidden />
+                  <span>{rollingDice ? 'Rolling the dice…' : 'Surprise Me'}</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setResultsOffset((o) => o + 1)}
-                  disabled={!hasNext}
-                  className="p-2 rounded-lg border border-brass/50 text-brass-light hover:border-brass hover:bg-brass/10 disabled:opacity-40 disabled:cursor-not-allowed transition-all touch-manipulation"
-                  title="Next page"
-                  aria-label="Next page"
-                >
-                  <ChevronRight className="w-5 h-5" />
-                </button>
-              </>
-            )}
-            {results.length === 0 && !loading && !error && (
-              <span className="text-cream text-sm">0 films</span>
-            )}
+              )}
+            </div>
           </div>
+        </header>
+        <div className="h-1 bg-cherry-900">
+          <div className="h-full w-full bg-brass" aria-hidden />
         </div>
-      </header>
-      <div className="h-1 bg-cherry-900 relative z-10">
-        <div className="h-full w-full bg-brass" aria-hidden />
       </div>
 
       {error && (
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4 relative z-10">
           <div className="rounded-xl border-2 border-amber-500/50 bg-cherry-900 p-4">
             <p className="text-amber-400 font-medium">Couldn’t load matches</p>
-            <p className="text-cream text-sm mt-1">{error}</p>
-            <p className="text-cream/80 text-sm mt-2">Check TMDB_API_KEY in .env.local and try again.</p>
+            <p className="text-antique text-sm mt-1">{error}</p>
+            <p className="text-antique/90 text-sm mt-2">Check TMDB_API_KEY in .env.local and try again.</p>
           </div>
         </div>
       )}
@@ -123,12 +151,12 @@ export default function ResultsView({
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="text-center py-24 border-2 border-brass/50 rounded-xl bg-cherry-950"
+              className="flex flex-col items-center justify-center min-h-[50vh] py-24"
             >
-              <p className="text-neon-gold text-xl font-display font-semibold text-neon-glow">
-                Finding your matches…
+              <VintageFilmReel className="w-24 h-24 sm:w-28 sm:h-28 mb-6" aria-hidden />
+              <p className="text-antique text-sm film-leader-pulse text-center">
+                Pulling real data from TMDB…
               </p>
-              <p className="text-cream text-sm mt-2">Using real data from TMDB</p>
             </motion.div>
           ) : results.length === 0 ? (
             <motion.div
@@ -137,9 +165,9 @@ export default function ResultsView({
               className="text-center py-20 border-2 border-brass/50 rounded-xl bg-cherry-950 overflow-hidden"
             >
               <div className="rounded-lg p-8 bg-cherry-900 mx-auto max-w-md">
-                <p className="text-cream text-lg">No matches for this combination.</p>
+                <p className="text-cream text-lg">No movies found.</p>
                 <p className="text-cream/80 text-sm mt-2">
-                  Open the Director&apos;s Slate to loosen your filters.
+                  Try different filters, use Surprise Me, or open the Director&apos;s Slate to loosen filters.
                 </p>
               </div>
             </motion.div>
@@ -148,6 +176,31 @@ export default function ResultsView({
               <p className="text-cream text-sm text-center mb-4 max-w-md">
                 Ranked from best match onward. Your top picks are listed first.
               </p>
+              <div className="w-full max-w-4xl flex justify-end pr-2 mb-1.5">
+                <div className="flex items-center gap-1.5 flex-nowrap">
+                  <span className="text-cream text-sm tabular-nums">{pageLabel}</span>
+                  <button
+                    type="button"
+                    onClick={() => setResultsOffset((o) => Math.max(0, o - 1))}
+                    disabled={!hasPrevious}
+                    className="p-1.5 rounded-sm border-2 border-brass/50 text-brass-light hover:border-brass hover:bg-brass/10 disabled:opacity-40 disabled:cursor-not-allowed transition-all touch-manipulation"
+                    title="Previous page"
+                    aria-label="Previous page"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setResultsOffset((o) => o + 1)}
+                    disabled={!hasNext}
+                    className="p-1.5 rounded-sm border-2 border-brass/50 text-brass-light hover:border-brass hover:bg-brass/10 disabled:opacity-40 disabled:cursor-not-allowed transition-all touch-manipulation"
+                    title="Next page"
+                    aria-label="Next page"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
               <div className="w-full max-w-4xl rounded-xl border-2 border-brass/50 overflow-hidden bg-cherry-900 shadow-lg">
                 <div className="p-4 sm:p-6">
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">

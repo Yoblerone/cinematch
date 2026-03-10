@@ -3,7 +3,7 @@
  * Get an API key at https://www.themoviedb.org/settings/api and set TMDB_API_KEY in .env.local.
  */
 
-import type { Movie, Genre, Decade, Runtime, Theme, VisualStyle } from './types';
+import type { Movie, Genre, Decade, Runtime, Theme, VisualStyle, Soundtrack } from './types';
 
 /** TMDB genre list: https://developer.themoviedb.org/reference/genre-movie-list */
 export const GENRE_ID_TO_NAME: Record<number, Genre> = {
@@ -48,35 +48,70 @@ const RUNTIME_RANGES: Record<NonNullable<Runtime>, { gte: number; lte: number }>
   long: { gte: 151, lte: 400 },
 };
 
-/** TMDB keyword IDs for themes (used in discover with_keywords for better results). */
+/** TMDB keyword IDs for 18 Theme/Mood tags (discover with_keywords). */
 export const THEME_TO_KEYWORD_ID: Partial<Record<Theme, number>> = {
-  'Coming of Age': 10683,
-  'Dystopia': 4565,
-  'Revenge': 9748,
-  'Time Travel': 818,
-  'Road Trip': 2499,
-  'Based on True Story': 9683,
-  'Noir': 2791,
-  'Love Triangle': 4485,
-  'Quest': 2590,
-  'Survival': 9655,
-  'Escape': 2517,
-  'Murder': 9725,
-  'Detective': 2580,
-  'Alien': 9715,
-  'Robot': 9794,
-  'Superhero': 9715,
-  'Zombie': 10314,
-  'Heist': 2654,
-  'Apocalypse': 2595,
-  'Space': 9882,
+  'Cult Classic': 10683,
+  'Adrenaline': 9748,
+  'Speculative': 9882,
+  'The Dark Side': 2791,
+  'Human Condition': 10683,
+  'Based on True Story': 9672,
+  'Twist Ending': 185014,
+  'Road Trip': 7312,
+  'Fish out of Water': 10683,
+  'Against the Clock': 9748,
+  'Identity Crisis': 10683,
+  'Whimsical': 181182,
+  'Heartfelt': 10683,
+  'Cynical': 210710,
+  'Philosophical': 10683,
+  'Satirical': 9715,
+  'Surreal': 345821,
+  'Melancholy': 10683,
 };
 
-/** TMDB keyword IDs for visual style / mood (discover with_keywords). Only IDs known to exist. */
+/** TMDB keyword IDs for 18 Visual Moods (discover with_keywords). */
 export const VISUAL_STYLE_TO_KEYWORD_ID: Partial<Record<VisualStyle, number>> = {
-  'Film Noir': 9807,
-  'Road Movie': 2499,
-  'Black and White': 2791,
+  'Noir Shadows': 801,
+  'Neon Dystopia': 9715,
+  'Found Footage': 9807,
+  'Technicolor Dream': 2791,
+  'Symmetric Frames': 2791,
+  'Gritty Realism': 1701,
+  'Wide Scope Epic': 2590,
+  'Gothic Horror': 819,
+  'Retro Grain': 9683,
+  'One-Take': 9794,
+  'Handheld Kinetic': 9807,
+  'Pop Art': 9715,
+  'High Contrast': 2791,
+  'Period': 9683,
+  'Warm Tones': 4485,
+  'Cold Tones': 9715,
+  'Saturated': 2791,
+  'Aerial': 2590,
+};
+
+/** TMDB keyword IDs for 18 Sound Profile tags (discover with_keywords). */
+export const SOUNDTRACK_TO_KEYWORD_ID: Partial<Record<Soundtrack, number>> = {
+  'Sweeping Orchestral': 2791,
+  'The Modern Pulse': 9715,
+  'Vintage/Analog': 9683,
+  'Intimate/Acoustic': 10683,
+  'Experimental': 181182,
+  'Jazz': 9683,
+  'Orchestral': 2791,
+  'Ambient': 181182,
+  'Synth': 9715,
+  'World Music': 10683,
+  'Acoustic': 10683,
+  'Percussion-heavy': 9748,
+  'Vocal-led': 10683,
+  'Minimal': 181182,
+  'Classical': 2791,
+  'Silent': 9683,
+  'No Score': 181182,
+  'Diegetic Only': 2791,
 };
 
 export interface TmdbDiscoverParams {
@@ -89,9 +124,17 @@ export interface TmdbDiscoverParams {
   theme?: Theme[];
   /** When set, combined with theme in with_keywords for visual/mood. */
   visualStyle?: VisualStyle[];
+  /** When set, combined in with_keywords for sound/music. */
+  soundtrack?: Soundtrack[];
+  /** Best Picture: when set, discover uses Academy Award keyword (250481 = Nominee, 272186 = Winner). */
+  oscarFilter?: 'any' | 'nominee' | 'winner';
   page?: number;
-  /** Default vote_count.desc; use vote_average.desc for cult-classic-style (highly rated) discovery. */
-  sortBy?: 'vote_count.desc' | 'vote_average.desc';
+  /** vote_count.desc (default), vote_average.desc, or popularity.desc for A-List / high-profile. */
+  sortBy?: 'vote_count.desc' | 'vote_average.desc' | 'popularity.desc';
+  /** Director prominence: force lesser-known (low) or heavy hitters (high) at API level. */
+  voteCountGte?: number;
+  voteCountLte?: number;
+  popularityLte?: number;
 }
 
 export interface TmdbMovieResult {
@@ -147,9 +190,19 @@ export function buildDiscoverSearchParams(params: TmdbDiscoverParams): Record<st
   const visualIds = (params.visualStyle ?? [])
     .map((v) => VISUAL_STYLE_TO_KEYWORD_ID[v])
     .filter((id): id is number => id != null);
-  const allKeywordIds = Array.from(new Set([...themeIds, ...visualIds]));
+  const soundtrackIds = (params.soundtrack ?? [])
+    .map((s) => SOUNDTRACK_TO_KEYWORD_ID[s])
+    .filter((id): id is number => id != null);
+  const oscarKeywordId =
+    params.oscarFilter === 'nominee' ? 250481 : params.oscarFilter === 'winner' ? 272186 : null;
+  const allKeywordIds = Array.from(
+    new Set([...themeIds, ...visualIds, ...soundtrackIds, ...(oscarKeywordId != null ? [oscarKeywordId] : [])])
+  );
   if (allKeywordIds.length > 0) q.with_keywords = allKeywordIds.join('|');
   if (params.page != null) q.page = String(params.page);
+  if (params.voteCountGte != null) q['vote_count.gte'] = String(params.voteCountGte);
+  if (params.voteCountLte != null) q['vote_count.lte'] = String(params.voteCountLte);
+  if (params.popularityLte != null) q['popularity.lte'] = String(params.popularityLte);
   return q;
 }
 
@@ -180,6 +233,7 @@ export function mapTmdbToMovie(t: TmdbMovieResult): Movie {
     budget: 0,
     rating: typeof t.vote_average === 'number' ? t.vote_average : 0,
     hasAListCast: false,
+    starPowerScore: 0,
     criticsVsFans: 'both',
     oscarWinner: false,
     oscarNominee: false,

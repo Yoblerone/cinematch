@@ -3,8 +3,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SlidersHorizontal, X, Plus, Minus, RotateCw, Film, Zap, Palette, Award } from 'lucide-react';
-import FilterLegend from './FilterLegend';
-import { RankIcon, FilterIcon } from './FilterTypeIcon';
 import type { FilterState, VisualStyle, Soundtrack, Genre, Theme, CriticsVsFans, Decade, Runtime } from '@/lib/types';
 import { MAX_GENRES } from '@/lib/types';
 import { ALL_VISUAL_STYLE_OPTIONS, ALL_SOUNDTRACK_OPTIONS, ALL_THEME_OPTIONS, GENRE_OPTIONS } from '@/lib/optionSets';
@@ -55,8 +53,10 @@ function ChipRow<T extends string>({
               key={opt}
               type="button"
               onClick={() => onToggle(opt)}
-              className={`px-3 py-1.5 rounded border text-sm ${
-                selected ? 'border-brass bg-brass/20 text-neon-gold' : 'border-brass/50 text-cream'
+              className={`px-3 py-1.5 rounded-sm border-2 text-sm transition-all duration-300 ${
+                selected
+                  ? 'border-brass bg-brass/15 text-neon-gold shadow-[0_0_20px_rgba(184,134,11,0.4)]'
+                  : 'border-brass/50 text-cream hover:border-brass hover:text-brass-light'
               }`}
             >
               {opt}
@@ -67,7 +67,7 @@ function ChipRow<T extends string>({
           <button
             type="button"
             onClick={onExpandToggle}
-            className="flex items-center justify-center w-8 h-8 rounded border border-brass/50 text-cream hover:border-brass hover:text-brass-light transition-all"
+            className="flex items-center justify-center w-8 h-8 rounded-sm border-2 border-brass/50 text-cream hover:border-brass hover:bg-brass/10 hover:text-brass-light transition-all"
             aria-label={expanded ? 'Show less' : 'Show more'}
             title={expanded ? 'Show less' : 'Show more'}
           >
@@ -200,7 +200,6 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
 
               <div className="flex-1 min-h-0 overflow-y-auto scroll-area-slate p-4">
                 <div className="space-y-4">
-                  <FilterLegend className="mb-2" />
                   {/* The Basics */}
                   <Section title="The Basics" icon={Film}>
                     <div className="grid sm:grid-cols-2 gap-4">
@@ -218,10 +217,9 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                     expanded={expandedGenre}
                     onExpandToggle={() => setExpandedGenre((e) => !e)}
                     label="Genre"
-                    icon={<FilterIcon />}
                   />
                   <div>
-                    <label className="block text-sm font-medium text-brass-light mb-2 flex items-center gap-1.5"><FilterIcon /> Decade</label>
+                    <label className="block text-sm font-medium text-brass-light mb-2">Decade</label>
                     <div className="flex flex-wrap gap-2">
                       {(['60s', '70s', '80s', '90s', '2000s', '2010s', '2020s'] as const).map((label) => {
                         const value = label as NonNullable<Decade>;
@@ -234,8 +232,8 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                               if (selected) onUpdate({ decade: filters.decade.filter((d) => d !== value) });
                               else onUpdate({ decade: [...filters.decade.filter((d) => d != null), value] });
                             }}
-                            className={`px-3 py-1.5 rounded border text-sm ${
-                              selected ? 'border-brass bg-brass/20 text-neon-gold' : 'border-brass/50 text-cream'
+                            className={`px-3 py-1.5 rounded-sm border-2 text-sm transition-all duration-300 ${
+                              selected ? 'border-brass bg-brass/15 text-neon-gold shadow-[0_0_20px_rgba(184,134,11,0.4)]' : 'border-brass/50 text-cream hover:border-brass hover:text-brass-light'
                             }`}
                           >
                             {label}
@@ -245,15 +243,15 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-brass-light mb-2 flex items-center gap-1.5"><FilterIcon /> Runtime</label>
+                    <label className="block text-sm font-medium text-brass-light mb-2">Runtime</label>
                     <div className="flex gap-2">
                       {([null, 'short', 'medium', 'long'] as const).map((v) => (
                         <button
                           key={String(v)}
                           type="button"
                           onClick={() => onUpdate({ runtime: v })}
-                          className={`px-3 py-1.5 rounded border text-sm ${
-                            filters.runtime === v ? 'border-brass bg-brass/20 text-neon-gold' : 'border-brass/50 text-cream'
+                          className={`px-3 py-1.5 rounded-sm border-2 text-sm transition-all duration-300 ${
+                            filters.runtime === v ? 'border-brass bg-brass/15 text-neon-gold shadow-[0_0_20px_rgba(184,134,11,0.4)]' : 'border-brass/50 text-cream hover:border-brass hover:text-brass-light'
                           }`}
                         >
                           {v == null ? 'Any' : v === 'short' ? 'Short (<90 min)' : v === 'medium' ? 'Medium (90–150 min)' : 'Long (2.5 hr+)'}
@@ -266,14 +264,11 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
 
                   {/* Energy & emotion – sliders affect ranking only; closer match = higher in results */}
                   <Section title="Energy & emotion" icon={Zap}>
-                    <div className="mb-4 rounded-lg border-l-2 border-brass/60 bg-cherry-900 px-3 py-2">
-                      <p className="text-sm text-brass-light/95">Sliders rank results: movies closer to your setting score higher and appear first. They don’t exclude movies.</p>
-                    </div>
                     <div className="grid sm:grid-cols-2 gap-4">
                   {SLIDER_CONFIG.map(({ key, label, low, high }) => (
                     <div key={key} className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="font-medium text-brass-light text-sm flex items-center gap-1.5"><RankIcon /> {label}</span>
+                        <span className="font-medium text-brass-light text-sm">{label}</span>
                         <span className="text-cream text-sm">{filters[key]}</span>
                       </div>
                       <input
@@ -309,7 +304,6 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                     expanded={expandedTheme}
                     onExpandToggle={() => setExpandedTheme((e) => !e)}
                     label="Theme / Mood"
-                    icon={<RankIcon />}
                   />
 
                   {/* Visual Style – first 3 + expand */}
@@ -326,7 +320,6 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                     expanded={expandedVisual}
                     onExpandToggle={() => setExpandedVisual((e) => !e)}
                     label="Visual Style"
-                    icon={<RankIcon />}
                   />
 
                   {/* Soundtrack – first 3 + expand */}
@@ -342,51 +335,96 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                     }
                     expanded={expandedSoundtrack}
                     onExpandToggle={() => setExpandedSoundtrack((e) => !e)}
-                    label="Soundtrack"
-                    icon={<RankIcon />}
+                    label="Sound Profile"
                   />
                     </div>
                   </Section>
 
-                  {/* Pedigree */}
+                  {/* Pedigree: sliders stacked vertically, matching Step 2 styling */}
                   <Section title="Pedigree" icon={Award}>
-                    <div className="grid sm:grid-cols-2 gap-4">
+                    <div className="space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-medium text-brass-light text-sm">A-List Cast (Star Power)</span>
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={filters.aListCastAny}
+                            onChange={(e) => onUpdate({ aListCastAny: e.target.checked })}
+                            className="rounded border-brass/50 text-brass bg-cherry-900"
+                          />
+                          <span className="text-cream text-sm">Any</span>
+                        </label>
+                      </div>
+                      <span className="text-cream text-sm tabular-nums">{filters.aListCastAny ? '—' : filters.aListCast}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={filters.aListCast}
+                      onChange={(e) => onUpdate({ aListCast: Number(e.target.value) })}
+                      disabled={filters.aListCastAny}
+                      className={`w-full ${filters.aListCastAny ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    />
+                    <div className="flex justify-between text-xs text-cream">
+                      <span>Indie ensembles</span>
+                      <span>Star power</span>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-medium text-brass-light text-sm">Director prominence</span>
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={filters.directorProminenceAny}
+                            onChange={(e) => onUpdate({ directorProminenceAny: e.target.checked })}
+                            className="rounded border-brass/50 text-brass bg-cherry-900"
+                          />
+                          <span className="text-cream text-sm">Any</span>
+                        </label>
+                      </div>
+                      <span className="text-cream text-sm tabular-nums">{filters.directorProminenceAny ? '—' : filters.directorProminence}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={filters.directorProminence}
+                      onChange={(e) => onUpdate({ directorProminence: Number(e.target.value) })}
+                      disabled={filters.directorProminenceAny}
+                      className={`w-full ${filters.directorProminenceAny ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    />
+                    <div className="flex justify-between text-xs text-cream">
+                      <span>Indie</span>
+                      <span>Household names</span>
+                    </div>
+                  </div>
                   <div>
-                    <label className="block text-sm font-medium text-brass-light mb-2 flex items-center gap-1.5"><FilterIcon /> Cult Classic</label>
-                    <div className="flex gap-2">
-                      {([null, true, false] as const).map((v) => (
+                    <label className="block text-sm font-medium text-brass-light mb-2">Academy Awards</label>
+                    <p className="text-xs text-cream mb-2">Best Picture only. Pick one: Any, Nominee, or Winner (mutually exclusive).</p>
+                    <div className="flex gap-2" role="radiogroup" aria-label="Academy Award Best Picture filter">
+                      {(['any', 'nominee', 'winner'] as const).map((opt) => (
                         <button
-                          key={String(v)}
+                          key={opt}
                           type="button"
-                          onClick={() => onUpdate({ cultClassic: v })}
-                          className={`px-3 py-1.5 rounded border text-sm ${
-                            filters.cultClassic === v ? 'border-brass bg-brass/20 text-neon-gold' : 'border-brass/50 text-cream'
+                          role="radio"
+                          aria-checked={filters.oscarFilter === opt}
+                          onClick={() => onUpdate({ oscarFilter: opt })}
+                          className={`px-3 py-1.5 rounded-sm border-2 text-sm transition-all duration-300 ${
+                            filters.oscarFilter === opt ? 'border-brass bg-brass/15 text-neon-gold shadow-[0_0_20px_rgba(184,134,11,0.4)]' : 'border-brass/50 text-cream hover:border-brass hover:text-brass-light'
                           }`}
                         >
-                          {v == null ? 'Any' : v ? 'Yes' : 'No'}
+                          {opt === 'any' ? 'Any' : opt === 'nominee' ? 'Nominee' : 'Winner'}
                         </button>
                       ))}
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-brass-light mb-2 flex items-center gap-1.5"><FilterIcon /> A-List Cast</label>
-                    <div className="flex gap-2">
-                      {([null, true, false] as const).map((v) => (
-                        <button
-                          key={String(v)}
-                          type="button"
-                          onClick={() => onUpdate({ aListCast: v })}
-                          className={`px-3 py-1.5 rounded border text-sm ${
-                            filters.aListCast === v ? 'border-brass bg-brass/20 text-neon-gold' : 'border-brass/50 text-cream'
-                          }`}
-                        >
-                          {v == null ? 'Any' : v ? 'Yes' : 'No'}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-brass-light mb-2 flex items-center gap-1.5"><FilterIcon /> Critics vs. Fans</label>
+                    <label className="block text-sm font-medium text-brass-light mb-2">Critics vs. Fans</label>
                     <div className="flex flex-wrap gap-2">
                       {(['any', 'critics', 'fans', 'both'] as const).map((opt) => {
                         const v = opt === 'any' ? null : (opt as CriticsVsFans);
@@ -396,67 +434,14 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                             key={opt}
                             type="button"
                             onClick={() => onUpdate({ criticsVsFans: v })}
-                            className={`px-3 py-1.5 rounded border text-sm ${
-                              selected ? 'border-brass bg-brass/20 text-neon-gold' : 'border-brass/50 text-cream'
+                            className={`px-3 py-1.5 rounded-sm border-2 text-sm transition-all duration-300 ${
+                              selected ? 'border-brass bg-brass/15 text-neon-gold shadow-[0_0_20px_rgba(184,134,11,0.4)]' : 'border-brass/50 text-cream hover:border-brass hover:text-brass-light'
                             }`}
                           >
                             {opt === 'any' ? 'Any' : opt === 'both' ? 'Both' : opt === 'critics' ? 'Critics' : 'Fans'}
                           </button>
                         );
                       })}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-brass-light mb-2 flex items-center gap-1.5"><FilterIcon /> Academy Awards</label>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs text-cream">Best Picture winner:</span>
-                        {([null, true, false] as const).map((v) => (
-                          <button
-                            key={`winner-${String(v)}`}
-                            type="button"
-                            onClick={() => onUpdate({ oscarWinner: v })}
-                            className={`px-3 py-1.5 rounded border text-sm ${
-                              filters.oscarWinner === v ? 'border-brass bg-brass/20 text-neon-gold' : 'border-brass/50 text-cream'
-                            }`}
-                          >
-                            {v == null ? 'Any' : v ? 'Yes' : 'No'}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs text-cream">Best Picture nominee:</span>
-                        {([null, true, false] as const).map((v) => (
-                          <button
-                            key={`nominee-${String(v)}`}
-                            type="button"
-                            onClick={() => onUpdate({ oscarNominee: v })}
-                            className={`px-3 py-1.5 rounded border text-sm ${
-                              filters.oscarNominee === v ? 'border-brass bg-brass/20 text-neon-gold' : 'border-brass/50 text-cream'
-                            }`}
-                          >
-                            {v == null ? 'Any' : v ? 'Yes' : 'No'}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="space-y-2 sm:col-span-2">
-                    <div className="flex items-center justify-between">
-                      <label className="font-medium text-brass-light text-sm flex items-center gap-1.5"><RankIcon /> Director prominence</label>
-                      <span className="text-cream text-sm">{filters.directorProminence}</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={filters.directorProminence}
-                      onChange={(e) => onUpdate({ directorProminence: Number(e.target.value) })}
-                      className="w-full"
-                    />
-                    <div className="flex justify-between text-xs text-cream">
-                      <span>Any</span>
-                      <span>Household names</span>
                     </div>
                   </div>
                     </div>

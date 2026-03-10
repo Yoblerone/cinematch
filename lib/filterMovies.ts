@@ -1,11 +1,17 @@
 import type { Movie, FilterState } from './types';
-import { movies } from './mockData';
 
 const CULT_POPULARITY_MIN = 5;
 const CULT_VOTE_COUNT_MIN = 1000;
 const CULT_VOTE_COUNT_MAX = 15000;
 const CULT_RATING_MIN = 7.0;
 const CULT_AGE_YEARS = 10;
+
+/** Prominence score for ranking: higher popularity and vote_count = more prominent (blockbusters). */
+export function prominenceScore(movie: Movie): number {
+  const pop = movie.popularity ?? 0;
+  const votes = movie.voteCount ?? 0;
+  return pop + Math.log10(1 + votes) * 10;
+}
 
 /** Cult Signature: longevity (high popularity today + 10+ years old) + devotion (rating > 7, vote count in cult range). */
 export function hasCultSignature(m: {
@@ -25,6 +31,20 @@ export function hasCultSignature(m: {
 }
 
 const BAND = 35;
+const ATMOSPHERE_POINTS_PER_TAG = 100;
+const CULT_CLASSIC_BUDGET_MAX = 5_000_000; // $5M
+const CULT_CLASSIC_YEAR_MAX = 2020; // release before 2020
+
+/** Cult Classic atmosphere: budget < $5M AND revenue > budget AND release < 2020. */
+function isCultClassicByNumbers(m: { budget: number; boxOffice: number; year: number }): boolean {
+  return (
+    m.budget < CULT_CLASSIC_BUDGET_MAX &&
+    m.boxOffice > m.budget &&
+    m.year > 0 &&
+    m.year < CULT_CLASSIC_YEAR_MAX
+  );
+}
+
 const DECADE_RANGES: Record<string, [number, number]> = {
   '60s': [1960, 1969], '70s': [1970, 1979], '80s': [1980, 1989], '90s': [1990, 1999],
   '2000s': [2000, 2009], '2010s': [2010, 2019], '2020s': [2020, 2030],
@@ -50,35 +70,47 @@ function runtimeMatch(runtimeMinutes: number, runtime: FilterState['runtime']): 
   return runtimeMinutes > 150;
 }
 
+/** Cumulative atmosphere score: +100 per selected tag that matches (Cult Classic can match by budget/revenue/year). */
+function atmosphereScore(movie: Movie, filters: FilterState): number {
+  let total = 0;
+  for (const t of filters.theme) {
+    const match =
+      movie.theme.includes(t) ||
+      (t === 'Cult Classic' && isCultClassicByNumbers(movie));
+    if (match) total += ATMOSPHERE_POINTS_PER_TAG;
+  }
+  for (const vs of filters.visualStyle) {
+    if (movie.visualStyle.includes(vs)) total += ATMOSPHERE_POINTS_PER_TAG;
+  }
+  for (const st of filters.soundtrack) {
+    if (movie.soundtrack.includes(st)) total += ATMOSPHERE_POINTS_PER_TAG;
+  }
+  return total;
+}
+
 function scoreMovie(movie: Movie, filters: FilterState): number {
-  let score = 0;
+  let score = atmosphereScore(movie, filters);
   if (filters.crowd != null && movie.crowd.includes(filters.crowd)) score += 2;
   for (const key of ['pacing', 'cryMeter', 'humor', 'romance', 'suspense'] as const) {
     if (inBand(movie[key], filters[key])) score += 1;
     score += (30 - Math.min(Math.abs(movie[key] - filters[key]), 30)) / 30;
   }
-  if (filters.visualStyle.length > 0) {
-    const m = filters.visualStyle.filter((vs) => movie.visualStyle.includes(vs)).length;
-    score += m * 4;
-  }
-  if (filters.soundtrack.length > 0) {
-    const m = filters.soundtrack.filter((st) => movie.soundtrack.includes(st)).length;
-    score += m * 4;
-  }
-  if (filters.theme.length > 0) {
-    const m = filters.theme.filter((t) => movie.theme.includes(t)).length;
-    score += m * 4;
-  }
   if (filters.genre.length > 0) {
     const matchCount = filters.genre.filter((g) => movie.genre.includes(g)).length;
     if (matchCount > 0) score += 2 + matchCount * 2;
   }
-  if (filters.oscarWinner === true && movie.oscarWinner) score += 1;
-  if (filters.oscarNominee === true && movie.oscarNominee) score += 1;
+  /* Pedigree: Oscar keyword filters at API; here we rank. Nominee = small boost. Winner = +500 for Best Picture winners so they rank above other Oscar winners (e.g. technical). */
+  if (filters.oscarFilter === 'nominee' && (movie.oscarNominee || movie.oscarWinner)) score += 1;
+  if (filters.oscarFilter === 'winner') {
+    if (movie.oscarWinner) score += 500; /* Best Picture winner (local list) – pushes above keyword-only winners */
+    else score += 0;
+  }
+  if (filters.criticsVsFans != null && movie.criticsVsFans === filters.criticsVsFans) score += 2;
   if (filters.decade.length > 0 && decadeMatch(movie.year, filters.decade)) score += 1;
   if (filters.runtime != null && runtimeMatch(movie.runtimeMinutes, filters.runtime)) score += 1;
-  if (filters.directorProminence > 0 && movie.directorProminence >= filters.directorProminence) score += 4;
-  /* Hidden Gem boost: when Cult Classic is on, prioritize huge gap between initial box office and current status. */
+  if (!filters.directorProminenceAny && filters.directorProminence > 0 && movie.directorProminence >= filters.directorProminence) score += 4;
+  if (!filters.aListCastAny && (movie.starPowerScore ?? 0) > 0) score += 2;
+  /* Hidden Gem boost: when Cult Classic filter is on, prioritize cult signature. */
   if (filters.cultClassic === true && hasCultSignature(movie)) {
     const pop = (movie.popularity ?? 0) + 1;
     const boxOffice = movie.boxOffice + 1;
@@ -90,33 +122,62 @@ function scoreMovie(movie: Movie, filters: FilterState): number {
 
 export function filterMovies(movieList: Movie[], filters: FilterState): Movie[] {
   const filtered = movieList.filter((movie) => {
-    /* Best Picture winner: strict filter. When Yes, only actual winners; when No, exclude winners. Empty result if none match. */
-    if (filters.oscarWinner === true && !movie.oscarWinner) return false;
-    if (filters.oscarWinner === false && movie.oscarWinner) return false;
-    if (filters.oscarNominee === true && !movie.oscarNominee) return false;
-    if (filters.oscarNominee === false && movie.oscarNominee) return false;
     if (filters.crowd != null && !movie.crowd.includes(filters.crowd)) return false;
     if (filters.genre.length > 0 && !filters.genre.some((g) => movie.genre.includes(g))) return false;
-    /* Theme, visual style, soundtrack: scoring-only so mood never returns 0; matches rank at top */
     const cult = hasCultSignature(movie);
     if (filters.cultClassic === true && !cult) return false;
     if (filters.cultClassic === false && cult) return false;
-    if (filters.aListCast === true && !movie.hasAListCast) return false;
-    if (filters.aListCast === false && movie.hasAListCast) return false;
-    if (filters.criticsVsFans != null && movie.criticsVsFans !== filters.criticsVsFans) return false;
     if (filters.decade.length > 0 && !decadeMatch(movie.year, filters.decade)) return false;
     if (filters.runtime != null && !runtimeMatch(movie.runtimeMinutes, filters.runtime)) return false;
-    /* Director prominence: scoring-only so we never return zero results; movies that meet the bar rank higher */
+    /* Pedigree (Oscar, Critics vs Fans, A-List, Director): rank only, no filtering */
     return true;
   });
   const withScores = filtered.map((m) => ({ movie: m, score: scoreMovie(m, filters) }));
   withScores.sort((a, b) => b.score - a.score);
-  return withScores.map((x) => x.movie);
-}
+  let result = withScores.map((x) => x.movie);
 
-/** Filter using the default mock movie list (for fallback when TMDB is unavailable). */
-export function filterMoviesWithMock(filters: FilterState): Movie[] {
-  return filterMovies(movies, filters);
-}
+  /* Director Prominence: when "Any" is checked, skip. Otherwise rank by prominence. */
+  if (filters.directorProminenceAny) return result;
 
-export { movies };
+  const dp = filters.directorProminence;
+  if (dp >= 75) {
+    result = [...result].sort((a, b) => prominenceScore(b) - prominenceScore(a));
+  } else if (dp <= 25) {
+    /* Strictly lowest popularity and vote_count first. Captain America rule: at 0, popularity > 50 goes to the very bottom. */
+    const pop = (m: Movie) => m.popularity ?? 0;
+    const votes = (m: Movie) => m.voteCount ?? 0;
+    if (dp === 0) {
+      const blockbusters = result.filter((m) => pop(m) > 50);
+      const rest = result.filter((m) => pop(m) <= 50);
+      rest.sort((a, b) => {
+        const pa = pop(a), pb = pop(b);
+        if (pa !== pb) return pa - pb;
+        return votes(a) - votes(b);
+      });
+      result = [...rest, ...blockbusters];
+    } else {
+      result = [...result].sort((a, b) => {
+        const pa = pop(a), pb = pop(b);
+        if (pa !== pb) return pa - pb;
+        return votes(a) - votes(b);
+      });
+    }
+  }
+
+  /* A-List Cast (Star Power): when "Any" is unchecked, rank by star power. 100 = highest first, 0 = lowest first. */
+  if (!filters.aListCastAny) {
+    const starPower = (m: Movie) => m.starPowerScore ?? 0;
+    if (filters.aListCast >= 50) {
+      result = [...result].sort((a, b) => starPower(b) - starPower(a));
+    } else {
+      result = [...result].sort((a, b) => starPower(a) - starPower(b));
+    }
+  }
+
+  /* Oscar Winner priority: when oscarFilter is 'winner', sort so winners appear first. */
+  if (filters.oscarFilter === 'winner') {
+    result = [...result].sort((a, b) => (b.oscarWinner ? 1 : 0) - (a.oscarWinner ? 1 : 0));
+  }
+
+  return result;
+}

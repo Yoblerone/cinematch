@@ -11,34 +11,37 @@ import { isOscarBestPictureWinner, isOscarBestPictureNominee } from './oscarWinn
 import { filterMovies } from './filterMovies';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
-const DISCOVER_PAGES = 5;
+/** Fetch this many pages (20 per page) to get a pool for ranking; e.g. 3 = 60 movies. */
+const DISCOVER_PAGES = 3;
 const CONCURRENCY = 6;
 
-/** Keyword name (lowercase) → our Theme tags (partial match). */
+/** Keyword name (lowercase) → 18 Theme/Mood tags. */
 function keywordToThemes(name: string): Theme[] {
   const themes: Theme[] = [];
   const n = name.toLowerCase();
   const themeMap: [string, Theme][] = [
-    ['coming of age', 'Coming of Age'], ['revenge', 'Revenge'], ['heist', 'Heist'],
-    ['dystopia', 'Dystopia'], ['time travel', 'Time Travel'], ['road trip', 'Road Trip'],
-    ['based on true story', 'Based on True Story'], ['twist ending', 'Twist Ending'],
-    ['dysfunctional family', 'Dysfunctional Family'], ['fish out of water', 'Fish out of Water'],
-    ['against the clock', 'Against the Clock'], ['noir', 'Noir'], ['love triangle', 'Love Triangle'],
-    ['quest', 'Quest'], ['survival', 'Survival'], ['identity', 'Identity Crisis'],
-    ['redemption', 'Redemption'], ['escape', 'Escape'], ['betrayal', 'Betrayal'],
-    ['found family', 'Found Family'], ['multiverse', 'Multiverse'], ['murder', 'Murder'],
-    ['detective', 'Detective'], ['conspiracy', 'Conspiracy'], ['secret identity', 'Secret Identity'],
-    ['alien', 'Alien'], ['robot', 'Robot'], ['superhero', 'Superhero'], ['vampire', 'Vampire'],
-    ['zombie', 'Zombie'], ['ghost', 'Ghost'], ['witch', 'Witch'], ['prison', 'Prison'],
-    ['school', 'School'], ['wedding', 'Wedding'], ['christmas', 'Christmas'], ['sport', 'Sports'],
-    ['music', 'Music'], ['dance', 'Dance'], ['art', 'Art'], ['politic', 'Politics'], ['war', 'War'],
-    ['terrorism', 'Terrorism'], ['kidnapping', 'Kidnapping'], ['hostage', 'Hostage'],
-    ['bank robbery', 'Bank Robbery'], ['assassin', 'Assassin'], ['spy', 'Spy'],
-    ['double cross', 'Double Cross'], ['corruption', 'Corruption'], ['courtroom', 'Courtroom'],
-    ['mistaken identity', 'Mistaken Identity'], ['amnesia', 'Amnesia'], ['serial killer', 'Serial Killer'],
-    ['haunted house', 'Haunted House'], ['apocalypse', 'Apocalypse'], ['space', 'Space'],
-    ['underdog', 'Underdog'], ['rivalry', 'Rivalry'], ['friendship', 'Friendship'],
-    ['loss', 'Loss'], ['grief', 'Grief'], ['addiction', 'Addiction'], ['mental', 'Mental Illness'],
+    ['cult', 'Cult Classic'],
+    ['revenge', 'Adrenaline'], ['action', 'Adrenaline'], ['heist', 'Adrenaline'],
+    ['alien', 'Speculative'], ['robot', 'Speculative'], ['space', 'Speculative'], ['time travel', 'Speculative'],
+    ['dystopia', 'Speculative'], ['superhero', 'Speculative'], ['apocalypse', 'Speculative'],
+    ['noir', 'The Dark Side'], ['murder', 'The Dark Side'], ['serial killer', 'The Dark Side'],
+    ['horror', 'The Dark Side'], ['vampire', 'The Dark Side'], ['zombie', 'The Dark Side'],
+    ['coming of age', 'Human Condition'], ['identity', 'Human Condition'], ['grief', 'Human Condition'],
+    ['loss', 'Human Condition'], ['addiction', 'Human Condition'], ['mental', 'Human Condition'],
+    ['found family', 'Human Condition'], ['redemption', 'Human Condition'],
+    ['based on true story', 'Based on True Story'], ['true story', 'Based on True Story'],
+    ['twist ending', 'Twist Ending'], ['plot twist', 'Twist Ending'],
+    ['road trip', 'Road Trip'], ['road movie', 'Road Trip'],
+    ['fish out of water', 'Fish out of Water'], ['stranger', 'Fish out of Water'],
+    ['against the clock', 'Against the Clock'], ['race against time', 'Against the Clock'], ['deadline', 'Against the Clock'],
+    ['identity crisis', 'Identity Crisis'], ['identity', 'Identity Crisis'],
+    ['whimsical', 'Whimsical'], ['whimsy', 'Whimsical'],
+    ['heartfelt', 'Heartfelt'], ['emotional', 'Heartfelt'],
+    ['cynical', 'Cynical'], ['cynicism', 'Cynical'],
+    ['philosophical', 'Philosophical'], ['philosophy', 'Philosophical'],
+    ['satire', 'Satirical'], ['satirical', 'Satirical'],
+    ['surreal', 'Surreal'], ['surrealism', 'Surreal'],
+    ['melancholy', 'Melancholy'], ['melancholic', 'Melancholy'], ['sad', 'Melancholy'],
   ];
   for (const [key, theme] of themeMap) {
     if (n.includes(key)) themes.push(theme);
@@ -46,18 +49,29 @@ function keywordToThemes(name: string): Theme[] {
   return themes;
 }
 
-/** Keyword name → our VisualStyle tags. */
+/** Keyword name → 18 Visual Moods (TMDB keyword–driven ranking). */
 function keywordToVisualStyles(name: string): VisualStyle[] {
   const styles: VisualStyle[] = [];
   const n = name.toLowerCase();
   const styleMap: [string, VisualStyle][] = [
-    ['noir', 'Film Noir'], ['vibrant', 'Vibrant'], ['gritty', 'Gritty'], ['symmetric', 'Symmetric'],
-    ['documentary', 'Documentary-style'], ['period', 'Period'], ['contrast', 'High Contrast'],
-    ['vintage', 'Vintage'], ['black and white', 'Black and White'], ['handheld', 'Handheld'],
-    ['animated', 'Animated'], ['stop motion', 'Stop Motion'], ['minimalist', 'Minimalist'],
-    ['surreal', 'Surreal'], ['road movie', 'Road Movie'], ['single location', 'Single Location'],
-    ['neon', 'Neon-lit'], ['desaturated', 'Desaturated'], ['warm', 'Warm Tones'],
-    ['cold', 'Cold Tones'], ['one take', 'One Take'], ['found footage', 'Found Footage'],
+    ['film noir', 'Noir Shadows'], ['noir', 'Noir Shadows'],
+    ['cyberpunk', 'Neon Dystopia'], ['neon', 'Neon Dystopia'], ['dystopia', 'Neon Dystopia'],
+    ['found footage', 'Found Footage'],
+    ['handheld', 'Handheld Kinetic'], ['shaky', 'Handheld Kinetic'],
+    ['vibrant', 'Technicolor Dream'], ['stylized', 'Technicolor Dream'], ['technicolor', 'Technicolor Dream'],
+    ['symmetric', 'Symmetric Frames'], ['wes anderson', 'Symmetric Frames'], ['balanced', 'Symmetric Frames'],
+    ['gritty', 'Gritty Realism'], ['natural light', 'Gritty Realism'], ['realism', 'Gritty Realism'],
+    ['cinemascope', 'Wide Scope Epic'], ['epic', 'Wide Scope Epic'], ['wide scope', 'Wide Scope Epic'],
+    ['gothic', 'Gothic Horror'], ['horror', 'Gothic Horror'],
+    ['period piece', 'Retro Grain'], ['16mm', 'Retro Grain'], ['retro', 'Retro Grain'], ['grain', 'Retro Grain'],
+    ['long take', 'One-Take'], ['one take', 'One-Take'],
+    ['pop art', 'Pop Art'], ['graphic', 'Pop Art'], ['comic', 'Pop Art'],
+    ['high contrast', 'High Contrast'], ['chiaroscuro', 'High Contrast'], ['contrast', 'High Contrast'],
+    ['period', 'Period'], ['period piece', 'Period'], ['historical', 'Period'],
+    ['warm tone', 'Warm Tones'], ['warm color', 'Warm Tones'], ['golden hour', 'Warm Tones'],
+    ['cold tone', 'Cold Tones'], ['cold color', 'Cold Tones'], ['blue tone', 'Cold Tones'],
+    ['saturated', 'Saturated'], ['vivid color', 'Saturated'], ['vibrant color', 'Saturated'],
+    ['aerial', 'Aerial'], ['drone', 'Aerial'], ['overhead', 'Aerial'], ['from above', 'Aerial'],
   ];
   for (const [key, style] of styleMap) {
     if (n.includes(key)) styles.push(style);
@@ -65,17 +79,28 @@ function keywordToVisualStyles(name: string): VisualStyle[] {
   return styles;
 }
 
-/** Keyword name → our Soundtrack tags. */
+/** Keyword name → 18 Sound Profile tags. */
 function keywordToSoundtracks(name: string): Soundtrack[] {
   const tracks: Soundtrack[] = [];
   const n = name.toLowerCase();
   const trackMap: [string, Soundtrack][] = [
-    ['orchestral', 'Orchestral'], ['jazz', 'Jazz'], ['electronic', 'Electronic'],
-    ['minimal', 'Minimal'], ['rock', 'Rock & Guitar'], ['hip-hop', 'Hip-Hop & R&B'],
-    ['classical', 'Classical'], ['score', 'Iconic Score'], ['musical', 'Musical Numbers'],
-    ['ambient', 'Ambient'], ['folk', 'Folk & Americana'], ['country', 'Country'],
-    ['blues', 'Blues'], ['synth', 'Synth'], ['piano', 'Piano-led'], ['choir', 'Choir & Strings'],
-    ['latin', 'Latin'], ['world music', 'World Music'], ['opera', 'Opera'], ['acoustic', 'Acoustic'],
+    ['orchestral', 'Sweeping Orchestral'], ['choir', 'Sweeping Orchestral'], ['score', 'Sweeping Orchestral'],
+    ['strings', 'Sweeping Orchestral'], ['orchestra', 'Orchestral'],
+    ['electronic', 'The Modern Pulse'], ['electronic music', 'The Modern Pulse'],
+    ['synth', 'Synth'], ['synthesizer', 'Synth'],
+    ['jazz', 'Jazz'], ['blues', 'Vintage/Analog'], ['rock', 'Vintage/Analog'],
+    ['classic songs', 'Vintage/Analog'], ['period', 'Vintage/Analog'],
+    ['acoustic', 'Acoustic'], ['piano', 'Intimate/Acoustic'], ['folk', 'Intimate/Acoustic'],
+    ['intimate', 'Intimate/Acoustic'],
+    ['experimental', 'Experimental'], ['sound design', 'Experimental'], ['ambient', 'Ambient'],
+    ['world music', 'World Music'], ['ethnic', 'World Music'],
+    ['percussion', 'Percussion-heavy'], ['drum', 'Percussion-heavy'],
+    ['vocal', 'Vocal-led'], ['singing', 'Vocal-led'], ['choir', 'Vocal-led'],
+    ['minimal', 'Minimal'], ['minimalist', 'Minimal'],
+    ['classical', 'Classical'], ['classical music', 'Classical'],
+    ['silent', 'Silent'], ['silent film', 'Silent'],
+    ['no score', 'No Score'], ['no music', 'No Score'],
+    ['diegetic', 'Diegetic Only'], ['source music', 'Diegetic Only'],
   ];
   for (const [key, track] of trackMap) {
     if (n.includes(key)) tracks.push(track);
@@ -176,12 +201,22 @@ function scalePopularity(pop: number): number {
   return Math.min(100, Math.round(Math.log2(pop + 1) * 15));
 }
 
-/** Top-billed cast with solid popularity → hasAListCast (recognizable names, not just megastars). */
+const A_LIST_POPULARITY_THRESHOLD = 50;
+
+/** Star power from top 5 billed cast: A-List = popularity > 50. Returns 0, 30, or 100. */
+function starPowerScoreFromCast(cast: TmdbCreditsResponse['cast']): number {
+  if (!cast?.length) return 0;
+  const byOrder = [...cast].sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+  const top5 = byOrder.slice(0, 5);
+  const aListCount = top5.filter((c) => (c.popularity ?? 0) > A_LIST_POPULARITY_THRESHOLD).length;
+  if (aListCount >= 3) return 100;
+  if (aListCount >= 1) return 30;
+  return 0;
+}
+
+/** Legacy: hasAListCast true when star power is 30 or 100 (1+ A-List in top 5). */
 function hasAListCast(cast: TmdbCreditsResponse['cast']): boolean {
-  if (!cast?.length) return false;
-  const top = cast.slice(0, 5);
-  const avgPop = top.reduce((s, c) => s + (c.popularity ?? 0), 0) / top.length;
-  return avgPop >= 6;
+  return starPowerScoreFromCast(cast) >= 30;
 }
 
 /** vote_average high + revenue not dominant → critics; high popularity → fans. */
@@ -287,6 +322,7 @@ export async function enrichMovie(apiKey: string, base: TmdbMovieResult): Promis
     budget,
     rating: voteAverage,
     hasAListCast: credits ? hasAListCast(credits.cast) : false,
+    starPowerScore: credits ? starPowerScoreFromCast(credits.cast) : 0,
     criticsVsFans: criticsVsFans(voteAverage, voteCount),
     oscarWinner: isOscarBestPictureWinner(base.id),
     oscarNominee: isOscarBestPictureNominee(base.id),
@@ -306,7 +342,12 @@ async function fetchDiscoverPage(
     runtime: FilterState['runtime'];
     theme: FilterState['theme'];
     visualStyle: FilterState['visualStyle'];
-    sortBy?: 'vote_count.desc' | 'vote_average.desc';
+    soundtrack: FilterState['soundtrack'];
+    oscarFilter: FilterState['oscarFilter'];
+    sortBy?: 'vote_count.desc' | 'vote_average.desc' | 'popularity.desc';
+    voteCountGte?: number;
+    voteCountLte?: number;
+    popularityLte?: number;
   },
   page: number
 ): Promise<TmdbMovieResult[]> {
@@ -316,8 +357,13 @@ async function fetchDiscoverPage(
     runtime: params.runtime ?? null,
     theme: params.theme?.length ? params.theme : undefined,
     visualStyle: params.visualStyle?.length ? params.visualStyle : undefined,
+    soundtrack: params.soundtrack?.length ? params.soundtrack : undefined,
+    oscarFilter: params.oscarFilter !== 'any' ? params.oscarFilter : undefined,
     page,
     sortBy: params.sortBy,
+    voteCountGte: params.voteCountGte,
+    voteCountLte: params.voteCountLte,
+    popularityLte: params.popularityLte,
   });
   const url = `${TMDB_BASE}/discover/movie?${new URLSearchParams({ ...q, api_key: apiKey }).toString()}`;
   const res = await fetch(url);
@@ -326,29 +372,68 @@ async function fetchDiscoverPage(
   return data.results ?? [];
 }
 
-const DISCOVER_PAGES_CULT = 5; // pages per sort when cult classic selected (we fetch both vote_count and vote_average)
+/** Minimum 2 pages (40 movies) for ranking pool. */
+const DISCOVER_PAGES_MIN = 2;
+const DISCOVER_PAGES_CULT = 5;
 
-/** Run discover (multiple pages), enrich each movie, then filter and sort with full wizard filters. */
-export async function getTmdbMatches(apiKey: string, filters: FilterState): Promise<Movie[]> {
-  const baseParams = {
+/** Options for discover (e.g. random start page for variety). */
+export type GetTmdbMatchesOptions = { discoverStartPage?: number };
+
+/** Live API: discover/movie with with_genres + with_keywords from user, then enrich and rank. */
+export async function getTmdbMatches(apiKey: string, filters: FilterState, options?: GetTmdbMatchesOptions): Promise<Movie[]> {
+  const baseParams: {
+    genre: FilterState['genre'];
+    decade: FilterState['decade'];
+    runtime: FilterState['runtime'];
+    theme: FilterState['theme'];
+    visualStyle: FilterState['visualStyle'];
+    soundtrack: FilterState['soundtrack'];
+    oscarFilter: FilterState['oscarFilter'];
+    sortBy?: 'vote_count.desc' | 'vote_average.desc' | 'popularity.desc';
+    voteCountGte?: number;
+    voteCountLte?: number;
+    popularityLte?: number;
+  } = {
     genre: filters.genre,
     decade: filters.decade,
     runtime: filters.runtime,
     theme: filters.theme,
     visualStyle: filters.visualStyle,
+    soundtrack: filters.soundtrack,
+    oscarFilter: filters.oscarFilter,
   };
 
-  const rawById = new Map<number, TmdbMovieResult>();
-  const pagesToFetch = filters.cultClassic === true ? DISCOVER_PAGES_CULT : DISCOVER_PAGES;
+  if (!filters.directorProminenceAny) {
+    const dp = filters.directorProminence;
+    if (dp < 30) {
+      baseParams.voteCountLte = 1000;
+      baseParams.popularityLte = 20;
+    } else if (dp > 70) {
+      baseParams.voteCountGte = 2000;
+    }
+  }
 
-  for (let p = 1; p <= pagesToFetch; p++) {
-    const page = await fetchDiscoverPage(apiKey, baseParams, p);
+  if (!filters.aListCastAny && filters.aListCast >= 50) {
+    baseParams.sortBy = 'popularity.desc';
+    if (baseParams.voteCountGte == null) baseParams.voteCountGte = 500;
+  }
+
+  const rawById = new Map<number, TmdbMovieResult>();
+  const pagesToFetch = filters.cultClassic === true ? DISCOVER_PAGES_CULT : Math.max(DISCOVER_PAGES_MIN, 3);
+  const startPage = options?.discoverStartPage != null
+    ? Math.max(1, Math.min(10, Math.floor(options.discoverStartPage)))
+    : 1;
+
+  for (let i = 0; i < pagesToFetch; i++) {
+    const pageNum = startPage + i;
+    const page = await fetchDiscoverPage(apiKey, baseParams, pageNum);
     for (const m of page) rawById.set(m.id, m);
   }
 
   if (filters.cultClassic === true) {
-    for (let p = 1; p <= pagesToFetch; p++) {
-      const page = await fetchDiscoverPage(apiKey, { ...baseParams, sortBy: 'vote_average.desc' }, p);
+    for (let i = 0; i < pagesToFetch; i++) {
+      const pageNum = startPage + i;
+      const page = await fetchDiscoverPage(apiKey, { ...baseParams, sortBy: 'vote_average.desc' }, pageNum);
       for (const m of page) rawById.set(m.id, m);
     }
   }

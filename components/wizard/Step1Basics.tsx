@@ -2,7 +2,6 @@
 
 import { motion } from 'framer-motion';
 import { Film, Calendar, Clock } from 'lucide-react';
-import { FilterIcon } from '../FilterTypeIcon';
 import type { Genre, Decade, Runtime } from '@/lib/types';
 import { GENRE_OPTIONS } from '@/lib/optionSets';
 import { MAX_GENRES } from '@/lib/types';
@@ -83,7 +82,6 @@ export default function Step1Basics({
         <div>
           <div className="flex items-center gap-2 text-brass-light mb-3">
             <Film className="w-5 h-5" />
-            <FilterIcon />
             <span className="font-medium">Genre</span>
             {genre.length > 0 && (
               <span className="text-cream text-xs">(up to {MAX_GENRES})</span>
@@ -112,7 +110,6 @@ export default function Step1Basics({
         <div>
           <div className="flex items-center gap-2 text-brass-light mb-3">
             <Calendar className="w-5 h-5" />
-            <FilterIcon />
             <span className="font-medium">Decade</span>
             <span className="text-cream text-xs">(select any)</span>
           </div>
@@ -138,7 +135,6 @@ export default function Step1Basics({
         <div>
           <div className="flex items-center gap-2 text-brass-light mb-3">
             <Clock className="w-5 h-5" />
-            <FilterIcon />
             <span className="font-medium">Runtime</span>
           </div>
           <div className="flex flex-wrap gap-2">

@@ -1,77 +1,39 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Star, Award, ThumbsUp, Trophy, Clapperboard } from 'lucide-react';
-import { FilterIcon, RankIcon } from '../FilterTypeIcon';
+import { Award, ThumbsUp, Trophy } from 'lucide-react';
 import type { CriticsVsFans } from '@/lib/types';
 
-interface Step4PedigreeProps {
-  cultClassic: boolean | null;
-  aListCast: boolean | null;
-  criticsVsFans: CriticsVsFans | null;
-  oscarWinner: boolean | null;
-  oscarNominee: boolean | null;
-  directorProminence: number;
-  onCultClassic: (v: boolean | null) => void;
-  onAListCast: (v: boolean | null) => void;
-  onCriticsVsFans: (v: CriticsVsFans | null) => void;
-  onOscarWinner: (v: boolean | null) => void;
-  onOscarNominee: (v: boolean | null) => void;
-  onDirectorProminence: (v: number) => void;
-}
+export type OscarFilterValue = 'any' | 'nominee' | 'winner';
 
-function ToggleRow({
-  label,
-  description,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  description: string;
-  value: boolean | null;
-  options: [string, string, string];
-  onChange: (v: boolean | null) => void;
-}) {
-  return (
-    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-2 border-b border-brass/20 last:border-0">
-      <div>
-        <p className="font-medium text-brass-light text-sm">{label}</p>
-        <p className="text-xs text-cream">{description}</p>
-      </div>
-      <div className="flex gap-2">
-        {(['any', 'yes', 'no'] as const).map((opt, i) => (
-          <button
-            key={opt}
-            type="button"
-            onClick={() => onChange(opt === 'any' ? null : opt === 'yes')}
-            className={`px-3 py-1.5 rounded border-2 text-sm font-medium transition-all ${
-              value === (opt === 'any' ? null : opt === 'yes')
-                ? 'border-brass bg-brass/20 text-neon-gold'
-                : 'border-brass/50 text-cream hover:border-brass'
-            }`}
-          >
-            {options[i]}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
+interface Step4PedigreeProps {
+  aListCastAny: boolean;
+  aListCast: number;
+  directorProminenceAny: boolean;
+  directorProminence: number;
+  oscarFilter: OscarFilterValue;
+  criticsVsFans: CriticsVsFans | null;
+  onAListCastAny: (v: boolean) => void;
+  onAListCast: (v: number) => void;
+  onDirectorProminenceAny: (v: boolean) => void;
+  onDirectorProminence: (v: number) => void;
+  onOscarFilter: (v: OscarFilterValue) => void;
+  onCriticsVsFans: (v: CriticsVsFans | null) => void;
 }
 
 export default function Step4Pedigree({
-  cultClassic,
+  aListCastAny,
   aListCast,
-  criticsVsFans,
-  oscarWinner,
-  oscarNominee,
+  directorProminenceAny,
   directorProminence,
-  onCultClassic,
+  oscarFilter,
+  criticsVsFans,
+  onAListCastAny,
   onAListCast,
-  onCriticsVsFans,
-  onOscarWinner,
-  onOscarNominee,
+  onDirectorProminenceAny,
   onDirectorProminence,
+  onOscarFilter,
+  onCriticsVsFans,
 }: Step4PedigreeProps) {
   return (
     <motion.div
@@ -87,82 +49,99 @@ export default function Step4Pedigree({
         <p className="text-cream text-sm">Curator&apos;s picks</p>
       </div>
 
-      <div className="space-y-6 max-w-2xl mx-auto max-h-[55vh] overflow-y-auto scroll-area-slate">
-        <div>
-          <div className="flex items-center gap-2 text-brass-light mb-3">
-            <Star className="w-5 h-5" />
-            <FilterIcon />
-            <span className="font-medium text-sm">Cult Classic Status</span>
+      <div className="space-y-6 max-w-xl mx-auto max-h-[55vh] overflow-y-auto scroll-area-slate">
+        {/* Sliders stacked vertically, matching Step 2 width and track styling */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-brass-light">
+              <Award className="w-5 h-5 flex-shrink-0" />
+              <span className="font-medium text-sm">A-List Cast (Star Power)</span>
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={aListCastAny}
+                  onChange={(e) => onAListCastAny(e.target.checked)}
+                  className="rounded border-brass/50 text-brass bg-cherry-900"
+                />
+                <span className="text-xs text-cream whitespace-nowrap">Any</span>
+              </label>
+            </div>
+            <span className="text-cream text-sm tabular-nums">{aListCastAny ? '—' : aListCast}</span>
           </div>
-          <ToggleRow
-            label="Cult Signature"
-            description="Underrated gems that found their audience"
-            value={cultClassic}
-            options={['Any', 'Yes', 'No']}
-            onChange={onCultClassic}
-          />
-        </div>
-        <div>
-          <div className="flex items-center gap-2 text-brass-light mb-3">
-            <Award className="w-5 h-5" />
-            <FilterIcon />
-            <span className="font-medium text-sm">A-List Cast</span>
-          </div>
-          <ToggleRow
-            label="Big names only"
-            description="Movies with recognizable stars"
+          <input
+            type="range"
+            min={0}
+            max={100}
             value={aListCast}
-            options={['Any', 'Yes', 'No']}
-            onChange={onAListCast}
+            onChange={(e) => onAListCast(Number(e.target.value))}
+            disabled={aListCastAny}
+            className={`w-full ${aListCastAny ? 'opacity-50 cursor-not-allowed' : ''}`}
           />
+          <div className="flex justify-between text-xs text-cream">
+            <span>Indie ensembles</span>
+            <span>Star power</span>
+          </div>
         </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-brass-light">
+              <Trophy className="w-5 h-5 flex-shrink-0" />
+              <span className="font-medium text-sm">Director prominence</span>
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={directorProminenceAny}
+                  onChange={(e) => onDirectorProminenceAny(e.target.checked)}
+                  className="rounded border-brass/50 text-brass bg-cherry-900"
+                />
+                <span className="text-xs text-cream whitespace-nowrap">Any</span>
+              </label>
+            </div>
+            <span className="text-cream text-sm tabular-nums">{directorProminenceAny ? '—' : directorProminence}</span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={directorProminence}
+            onChange={(e) => onDirectorProminence(Number(e.target.value))}
+            disabled={directorProminenceAny}
+            className={`w-full ${directorProminenceAny ? 'opacity-50 cursor-not-allowed' : ''}`}
+          />
+          <div className="flex justify-between text-xs text-cream">
+            <span>Indie</span>
+            <span>Household names</span>
+          </div>
+        </div>
+
+        {/* Oscar: [Any] [Nominee] [Winner] */}
         <div>
           <div className="flex items-center gap-2 text-brass-light mb-3">
             <Trophy className="w-5 h-5" />
-            <FilterIcon />
             <span className="font-medium text-sm">Academy Awards</span>
           </div>
-          <ToggleRow
-            label="Best Picture winner"
-            description="Oscar winner for Best Picture"
-            value={oscarWinner}
-            options={['Any', 'Yes', 'No']}
-            onChange={onOscarWinner}
-          />
-          <ToggleRow
-            label="Best Picture nominee"
-            description="Nominated for Best Picture (winners count as nominees)"
-            value={oscarNominee}
-            options={['Any', 'Yes', 'No']}
-            onChange={onOscarNominee}
-          />
-        </div>
-        <div>
-          <div className="flex items-center gap-2 text-brass-light mb-3">
-            <Clapperboard className="w-5 h-5" />
-            <RankIcon />
-            <span className="font-medium text-sm">Director prominence</span>
-          </div>
-          <p className="text-xs text-cream mb-2">
-            From any director (0) to household names only (100).
-          </p>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-cream w-8">Any</span>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              value={directorProminence}
-              onChange={(e) => onDirectorProminence(Number(e.target.value))}
-              className="flex-1"
-            />
-            <span className="text-xs text-brass-light w-10 tabular-nums">{directorProminence}</span>
+          <p className="text-xs text-cream mb-2">Best Picture only. Pick one: Nominee (incl. winners) or Winner (Best Picture winners first).</p>
+          <div className="flex gap-2" role="radiogroup" aria-label="Academy Award Best Picture filter">
+            {(['any', 'nominee', 'winner'] as const).map((opt) => (
+              <button
+                key={opt}
+                type="button"
+                role="radio"
+                aria-checked={oscarFilter === opt}
+                onClick={() => onOscarFilter(opt)}
+                className={`px-3 py-1.5 rounded-sm border-2 text-sm font-medium transition-all duration-300 ${
+                  oscarFilter === opt ? 'border-brass bg-brass/15 text-neon-gold shadow-[0_0_20px_rgba(184,134,11,0.4)]' : 'border-brass/50 text-cream hover:border-brass hover:text-brass-light'
+                }`}
+              >
+                {opt === 'any' ? 'Any' : opt === 'nominee' ? 'Nominee' : 'Winner'}
+              </button>
+            ))}
           </div>
         </div>
+
         <div>
           <div className="flex items-center gap-2 text-brass-light mb-3">
             <ThumbsUp className="w-5 h-5" />
-            <FilterIcon />
             <span className="font-medium text-sm">Critics vs. Fans</span>
           </div>
           <div className="flex flex-wrap gap-2">

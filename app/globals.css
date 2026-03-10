@@ -5,8 +5,10 @@
 :root {
   --cherry-950: #1a0608;
   --cherry-900: #2d0a0f;
+  --burgundy: #800020;
   --brass: #b8860b;
   --neon-gold: #ffd700;
+  --antique-white: #f5f5dc;
   --neon-rose: #ff6b9d;
 }
 
@@ -71,6 +73,87 @@ body {
             drop-shadow(0 0 12px rgba(255, 215, 0, 0.55))
             drop-shadow(0 0 28px rgba(255, 215, 0, 0.2));
   }
+}
+
+/* Classic Hollywood neon marquee logo: bright yellow, neon glow (white/yellow/red), flicker. Use with a double-border wrapper. */
+.marquee-logo {
+  color: #FFD700;
+  text-shadow:
+    0 0 4px rgba(255, 255, 255, 0.95),
+    0 0 10px rgba(255, 255, 255, 0.6),
+    0 0 20px #FFD700,
+    0 0 30px rgba(255, 215, 0, 0.8),
+    0 0 40px rgba(255, 200, 0, 0.5),
+    0 0 2px rgba(255, 100, 80, 0.4);
+  animation: marquee-logo-flicker 4s ease-in-out infinite;
+}
+
+@keyframes marquee-logo-flicker {
+  0%, 38%, 100% {
+    opacity: 1;
+    text-shadow:
+      0 0 4px rgba(255, 255, 255, 0.95),
+      0 0 10px rgba(255, 255, 255, 0.6),
+      0 0 20px #FFD700,
+      0 0 30px rgba(255, 215, 0, 0.8),
+      0 0 40px rgba(255, 200, 0, 0.5),
+      0 0 2px rgba(255, 100, 80, 0.4);
+  }
+  42%, 58% {
+    opacity: 0.92;
+    text-shadow:
+      0 0 2px rgba(255, 255, 255, 0.8),
+      0 0 8px rgba(255, 255, 255, 0.4),
+      0 0 16px rgba(255, 215, 0, 0.7),
+      0 0 24px rgba(255, 215, 0, 0.5),
+      0 0 32px rgba(255, 200, 0, 0.3),
+      0 0 2px rgba(255, 100, 80, 0.25);
+  }
+  62%, 92% {
+    opacity: 1;
+    text-shadow:
+      0 0 4px rgba(255, 255, 255, 0.95),
+      0 0 10px rgba(255, 255, 255, 0.6),
+      0 0 20px #FFD700,
+      0 0 30px rgba(255, 215, 0, 0.8),
+      0 0 40px rgba(255, 200, 0, 0.5),
+      0 0 2px rgba(255, 100, 80, 0.4);
+  }
+  96% {
+    opacity: 0.94;
+    text-shadow:
+      0 0 2px rgba(255, 255, 255, 0.85),
+      0 0 8px rgba(255, 255, 255, 0.5),
+      0 0 18px rgba(255, 215, 0, 0.75),
+      0 0 28px rgba(255, 215, 0, 0.55),
+      0 0 36px rgba(255, 200, 0, 0.35),
+      0 0 2px rgba(255, 100, 80, 0.3);
+  }
+}
+
+/* Film reel spin animation for loading state */
+@keyframes spin-reel {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spin-reel {
+  animation: spin-reel 2.5s linear infinite;
+  transform-origin: center;
+}
+
+/* Film leader typed pulse for loading text */
+@keyframes film-leader-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.75; }
+}
+
+.film-leader-pulse {
+  animation: film-leader-pulse 1.5s ease-in-out infinite;
+}
+
+.film-leader-pulse-delay {
+  animation: film-leader-pulse 1.5s ease-in-out 0.2s infinite;
 }
 
 .text-neon-rose {
@@ -167,17 +250,15 @@ input[type="range"]::-moz-range-thumb {
   scrollbar-color: var(--brass) var(--cherry-900);
 }
 
-/* Aesthetic step: 2-row chip grid, responsive column width for mobile */
+/* Aesthetic step: 2×3 carousel grid (6 tags at a time), Burgundy + Yellow */
 .aesthetic-chip-grid {
   display: grid;
-  gap: 0.5rem;
+  gap: 0.375rem 0.5rem;
   width: 100%;
-  grid-template-rows: repeat(2, 2.5rem);
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(5rem, 1fr);
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(2, 2.25rem);
+  min-height: 4.75rem;
 }
-@media (min-width: 640px) {
-  .aesthetic-chip-grid {
-    grid-auto-columns: minmax(7.5rem, 11rem);
-  }
+.aesthetic-chip-grid .tag-chip {
+  min-width: 0;
 }
