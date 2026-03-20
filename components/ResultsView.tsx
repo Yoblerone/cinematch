@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Home, ChevronLeft, ChevronRight, Dices } from 'lucide-react';
 import type { FilterState, Movie } from '@/lib/types';
+import { defaultFilters } from '@/lib/types';
 import MovieCard from './MovieCard';
 import DirectorsConsole from './DirectorsConsole';
 import SparkleBackground from './SparkleBackground';
@@ -84,6 +85,9 @@ export default function ResultsView({
   }, [results.length, start]);
 
   const displayed = results.slice(start, start + RESULTS_PAGE_SIZE);
+  const hasOsarFilter = filters.oscarFilter !== 'any';
+  const hasSecondaryFilter = filters.genre.length > 0 || filters.decade.length > 0 || filters.runtime != null;
+  const shouldShowMatchPercent = !hasOsarFilter || hasSecondaryFilter;
   const hasNext = start + RESULTS_PAGE_SIZE < results.length;
   const hasPrevious = resultsOffset > 0;
   const pageLabel =
@@ -155,7 +159,7 @@ export default function ResultsView({
             >
               <VintageFilmReel className="w-24 h-24 sm:w-28 sm:h-28 mb-6" aria-hidden />
               <p className="text-antique text-sm film-leader-pulse text-center">
-                Pulling real data from TMDB…
+                Pulling reel data from TMDB…
               </p>
             </motion.div>
           ) : results.length === 0 ? (
@@ -204,14 +208,22 @@ export default function ResultsView({
               <div className="w-full max-w-4xl rounded-xl border-2 border-brass/50 overflow-hidden bg-cherry-900 shadow-lg">
                 <div className="p-4 sm:p-6">
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
-                    {displayed.map((movie, i) => (
-                      <MovieCard
-                        key={movie.id}
-                        movie={movie}
-                        index={start + i}
-                        variant="compact"
-                      />
-                    ))}
+                    {displayed.map((movie, i) => {
+                      const globalIdx = start + i;
+                      const matchPercent =
+                        movie.rating >= 0.5
+                          ? Math.round((movie.rating / 10) * 100)
+                          : Math.round(Math.min(99, Math.max(65, 96 - globalIdx * 0.4)));
+                      return (
+                        <MovieCard
+                          key={movie.id}
+                          movie={movie}
+                          index={globalIdx}
+                          variant="compact"
+                          matchPercent={shouldShowMatchPercent ? matchPercent : undefined}
+                        />
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -241,6 +253,7 @@ export default function ResultsView({
         onUpdate={onUpdateFilters}
         onOpenChange={setIsSlateOpen}
         onRefresh={onRefresh}
+        onClearSelections={() => onUpdateFilters(defaultFilters)}
       />
     </div>
   );

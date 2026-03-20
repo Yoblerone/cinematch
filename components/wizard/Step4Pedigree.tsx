@@ -2,9 +2,10 @@
 
 import { motion } from 'framer-motion';
 import { Award, ThumbsUp, Trophy } from 'lucide-react';
+import StepResetButton from './StepResetButton';
 import type { CriticsVsFans } from '@/lib/types';
 
-export type OscarFilterValue = 'any' | 'nominee' | 'winner';
+export type OscarFilterValue = 'any' | 'nominee' | 'winner' | 'both';
 
 interface Step4PedigreeProps {
   aListCastAny: boolean;
@@ -19,6 +20,7 @@ interface Step4PedigreeProps {
   onDirectorProminence: (v: number) => void;
   onOscarFilter: (v: OscarFilterValue) => void;
   onCriticsVsFans: (v: CriticsVsFans | null) => void;
+  onResetStep?: () => void;
 }
 
 export default function Step4Pedigree({
@@ -34,6 +36,7 @@ export default function Step4Pedigree({
   onDirectorProminence,
   onOscarFilter,
   onCriticsVsFans,
+  onResetStep,
 }: Step4PedigreeProps) {
   return (
     <motion.div
@@ -47,6 +50,7 @@ export default function Step4Pedigree({
           The Pedigree
         </h2>
         <p className="text-cream text-sm">Curator&apos;s picks</p>
+        {onResetStep && <StepResetButton onReset={onResetStep} />}
       </div>
 
       <div className="space-y-6 max-w-xl mx-auto max-h-[55vh] overflow-y-auto scroll-area-slate">
@@ -114,15 +118,17 @@ export default function Step4Pedigree({
           </div>
         </div>
 
-        {/* Oscar: [Any] [Nominee] [Winner] */}
+        {/* Oscar: [Any] [Nominee] [Winner] [Both] */}
         <div>
           <div className="flex items-center gap-2 text-brass-light mb-3">
             <Trophy className="w-5 h-5" />
             <span className="font-medium text-sm">Academy Awards</span>
           </div>
-          <p className="text-xs text-cream mb-2">Best Picture only. Pick one: Nominee (incl. winners) or Winner (Best Picture winners first).</p>
-          <div className="flex gap-2" role="radiogroup" aria-label="Academy Award Best Picture filter">
-            {(['any', 'nominee', 'winner'] as const).map((opt) => (
+          <p className="text-xs text-cream mb-2">
+            Best Picture only. Pick one: Nominee, Winner, Both (winners + nominees), or Any.
+          </p>
+          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Academy Award Best Picture filter">
+            {(['any', 'nominee', 'winner', 'both'] as const).map((opt) => (
               <button
                 key={opt}
                 type="button"
@@ -133,7 +139,13 @@ export default function Step4Pedigree({
                   oscarFilter === opt ? 'border-brass bg-brass/15 text-neon-gold shadow-[0_0_20px_rgba(184,134,11,0.4)]' : 'border-brass/50 text-cream hover:border-brass hover:text-brass-light'
                 }`}
               >
-                {opt === 'any' ? 'Any' : opt === 'nominee' ? 'Nominee' : 'Winner'}
+                {opt === 'any'
+                  ? 'Any'
+                  : opt === 'nominee'
+                    ? 'Nominee'
+                    : opt === 'winner'
+                      ? 'Winner'
+                      : 'Both'}
               </button>
             ))}
           </div>

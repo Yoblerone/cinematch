@@ -1,6 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
+import StepResetButton from './StepResetButton';
 
 const sliders = [
   { key: 'pacing' as const, label: 'Pacing', low: 'Slow Burn', high: 'Breakneck' },
@@ -18,6 +19,7 @@ interface Step2EnergyProps {
   romance: number;
   suspense: number;
   onChange: (key: 'pacing' | 'intensity' | 'cryMeter' | 'humor' | 'romance' | 'suspense', value: number) => void;
+  onResetStep?: () => void;
 }
 
 export default function Step2Energy({
@@ -28,6 +30,7 @@ export default function Step2Energy({
   romance,
   suspense,
   onChange,
+  onResetStep,
 }: Step2EnergyProps) {
   const values = { pacing, intensity, cryMeter, humor, romance, suspense };
 
@@ -43,6 +46,7 @@ export default function Step2Energy({
           The Energy & Emotion
         </h2>
         <p className="text-cream text-sm">Set the vibe</p>
+        {onResetStep && <StepResetButton onReset={onResetStep} />}
       </div>
       <div className="scroll-area-slate space-y-6 max-w-xl mx-auto max-h-[55vh] overflow-y-auto">
         {sliders.map((slider) => {

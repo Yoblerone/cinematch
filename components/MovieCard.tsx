@@ -11,9 +11,11 @@ interface MovieCardProps {
   movie: Movie;
   index: number;
   variant?: 'featured' | 'compact';
+  /** 0–100 match score for results list (rank / rating derived). */
+  matchPercent?: number;
 }
 
-export default function MovieCard({ movie, index, variant = 'compact' }: MovieCardProps) {
+export default function MovieCard({ movie, index, variant = 'compact', matchPercent }: MovieCardProps) {
   const isFeatured = variant === 'featured';
   const posterUrl = movie.posterPath
     ? `${TMDB_IMAGE_BASE}/${isFeatured ? 'w500' : 'w342'}${movie.posterPath}`
@@ -54,16 +56,33 @@ export default function MovieCard({ movie, index, variant = 'compact' }: MovieCa
           >
             {movie.title}
           </h3>
-          <div className="flex items-center gap-1 shrink-0 text-neon-gold" title="Rating">
-            <Star className={isFeatured ? 'w-5 h-5' : 'w-4 h-4'} fill="currentColor" aria-hidden />
-            <span className={`font-semibold tabular-nums ${isFeatured ? 'text-lg' : 'text-sm'}`}>
-              {movie.rating.toFixed(1)}
-            </span>
+          <div className="flex flex-col items-end gap-0.5 shrink-0 text-neon-gold" title="Rating">
+            <div className="flex items-center gap-1">
+              <Star className={isFeatured ? 'w-5 h-5' : 'w-4 h-4'} fill="currentColor" aria-hidden />
+              <span className={`font-semibold tabular-nums ${isFeatured ? 'text-lg' : 'text-sm'}`}>
+                {movie.rating.toFixed(1)}
+              </span>
+            </div>
+            {matchPercent != null && (
+              <span
+                className={`tabular-nums text-slate-400 ${isFeatured ? 'text-xs' : 'text-[10px] leading-tight'}`}
+                title="Match score"
+              >
+                {matchPercent}% Match
+              </span>
+            )}
           </div>
         </div>
         <p className={`text-cream ${isFeatured ? 'text-sm mt-1' : 'text-xs mt-0.5'}`}>
           {movie.year}
         </p>
+        {movie.academyAwardYear != null && movie.academyAwardType && (
+          <p className={`text-neon-gold font-medium ${isFeatured ? 'text-sm mt-0.5' : 'text-xs mt-0.5'}`}>
+            {movie.academyAwardType === 'Winner'
+              ? `Academy Award Winner ${movie.academyAwardYear}`
+              : `Best Picture Nominee ${movie.academyAwardYear}`}
+          </p>
+        )}
         <p
           className={`text-cream/90 italic ${isFeatured ? 'text-sm mt-2' : 'text-xs mt-1'} line-clamp-2`}
         >

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight, Sparkles, Home, Dices } from 'lucide-react';
 import type { FilterState, Movie } from '@/lib/types';
@@ -21,6 +21,7 @@ import SparkleBackground from './SparkleBackground';
 import MarqueeLogo from './MarqueeLogo';
 
 const STEPS = 4;
+const SESSION_KEY = 'cinematch-results-state';
 
 export default function RedCarpetWizard() {
   const [step, setStep] = useState(1);
@@ -30,6 +31,77 @@ export default function RedCarpetWizard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rollingDice, setRollingDice] = useState(false);
+
+  /** Restore results after refresh; always clear loading (fixes stuck spinner if fetch aborts / stringify fails / Strict Mode). */
+  useEffect(() => {
+    let cancelled = false;
+    const ac = new AbortController();
+
+    async function restoreSession() {
+      try {
+        const raw = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(SESSION_KEY) : null;
+        if (!raw) return;
+        let parsed: { filters?: FilterState; wasOnResults?: boolean };
+        try {
+          parsed = JSON.parse(raw) as { filters?: FilterState; wasOnResults?: boolean };
+        } catch {
+          return;
+        }
+        const { filters: saved, wasOnResults } = parsed;
+        if (!wasOnResults || saved == null) return;
+
+        setFilters({ ...defaultFilters, ...saved });
+        setShowResults(true);
+        setLoading(true);
+
+        let bodyStr: string;
+        try {
+          bodyStr = JSON.stringify({ ...saved });
+        } catch {
+          if (!cancelled) setLoading(false);
+          return;
+        }
+
+        const timeoutMs = 60_000;
+        const timeoutId = setTimeout(() => ac.abort(), timeoutMs);
+        try {
+          const res = await fetch('/api/tmdb/match', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: bodyStr,
+            signal: ac.signal,
+          });
+          let data: { movies?: Movie[] } = {};
+          try {
+            data = (await res.json()) as { movies?: Movie[] };
+          } catch {
+            /* non-JSON body */
+          }
+          if (!cancelled) {
+            if (res.ok) setResults(data.movies ?? []);
+            else setResults([]);
+          }
+        } catch (e) {
+          if (!cancelled && e instanceof Error && e.name !== 'AbortError') {
+            setResults([]);
+          }
+        } finally {
+          clearTimeout(timeoutId);
+          if (!cancelled) setLoading(false);
+        }
+      } catch {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void restoreSession();
+
+    return () => {
+      cancelled = true;
+      ac.abort();
+      setLoading(false);
+    };
+  }, []);
 
   /** Chaos Mode: one random genre, 2–3 random atmosphere tags, all sliders random 0–100; returns full FilterState. */
   function generateRandomVibe(): FilterState {
@@ -94,6 +166,11 @@ export default function RedCarpetWizard() {
         setResults([]);
       } else {
         setResults(data.movies ?? []);
+        try {
+          sessionStorage.setItem(SESSION_KEY, JSON.stringify({ filters: f, wasOnResults: true }));
+        } catch {
+          // ignore
+        }
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Network error');
@@ -135,7 +212,17 @@ export default function RedCarpetWizard() {
       <ResultsView
         filters={filters}
         onUpdateFilters={updateFilters}
-        onBackToWizard={() => { setShowResults(false); setError(null); setStep(1); }}
+        onBackToWizard={() => {
+          try {
+            sessionStorage.setItem(SESSION_KEY, JSON.stringify({ wasOnResults: false }));
+          } catch {
+            // ignore
+          }
+          setShowResults(false);
+          setLoading(false);
+          setError(null);
+          setStep(1);
+        }}
         results={results}
         loading={loading}
         error={error}
@@ -234,6 +321,9 @@ export default function RedCarpetWizard() {
                   onGenreChange={(g) => updateFilters({ genre: g })}
                   onDecadeChange={(d) => updateFilters({ decade: d })}
                   onRuntimeChange={(r) => updateFilters({ runtime: r })}
+                  onResetStep={() =>
+                    updateFilters({ genre: [], decade: [], runtime: null })
+                  }
                 />
               </motion.div>
             )}
@@ -253,6 +343,16 @@ export default function RedCarpetWizard() {
                   romance={filters.romance}
                   suspense={filters.suspense}
                   onChange={(key, value) => updateFilters({ [key]: value })}
+                  onResetStep={() =>
+                    updateFilters({
+                      pacing: 50,
+                      intensity: 50,
+                      cryMeter: 50,
+                      humor: 50,
+                      romance: 50,
+                      suspense: 50,
+                    })
+                  }
                 />
               </motion.div>
             )}
@@ -286,6 +386,9 @@ export default function RedCarpetWizard() {
                       : [...filters.soundtrack, v];
                     updateFilters({ soundtrack: next });
                   }}
+                  onResetStep={() =>
+                    updateFilters({ theme: [], visualStyle: [], soundtrack: [] })
+                  }
                 />
               </motion.div>
             )}
@@ -310,6 +413,16 @@ export default function RedCarpetWizard() {
                   onDirectorProminence={(v) => updateFilters({ directorProminence: v })}
                   onOscarFilter={(v) => updateFilters({ oscarFilter: v })}
                   onCriticsVsFans={(v) => updateFilters({ criticsVsFans: v })}
+                  onResetStep={() =>
+                    updateFilters({
+                      aListCastAny: true,
+                      aListCast: 50,
+                      directorProminenceAny: true,
+                      directorProminence: 50,
+                      oscarFilter: 'any',
+                      criticsVsFans: null,
+                    })
+                  }
                 />
               </motion.div>
             )}

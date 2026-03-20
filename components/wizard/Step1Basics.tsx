@@ -5,6 +5,7 @@ import { Film, Calendar, Clock } from 'lucide-react';
 import type { Genre, Decade, Runtime } from '@/lib/types';
 import { GENRE_OPTIONS } from '@/lib/optionSets';
 import { MAX_GENRES } from '@/lib/types';
+import StepResetButton from './StepResetButton';
 
 const DECADE_OPTIONS: { value: Decade & {}; label: string }[] = [
   { value: '60s', label: '60s' },
@@ -54,6 +55,7 @@ interface Step1BasicsProps {
   onGenreChange: (g: Genre[]) => void;
   onDecadeChange: (d: (Decade & {})[]) => void;
   onRuntimeChange: (r: Runtime) => void;
+  onResetStep?: () => void;
 }
 
 export default function Step1Basics({
@@ -63,6 +65,7 @@ export default function Step1Basics({
   onGenreChange,
   onDecadeChange,
   onRuntimeChange,
+  onResetStep,
 }: Step1BasicsProps) {
   return (
     <motion.div
@@ -76,6 +79,7 @@ export default function Step1Basics({
           The Basics
         </h2>
         <p className="text-cream text-sm">Genre, era & length</p>
+        {onResetStep && <StepResetButton onReset={onResetStep} />}
       </div>
 
       <div className="space-y-6 max-w-2xl mx-auto">

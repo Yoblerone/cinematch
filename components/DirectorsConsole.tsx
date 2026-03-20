@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { SlidersHorizontal, X, Plus, Minus, RotateCw, Film, Zap, Palette, Award } from 'lucide-react';
+import { SlidersHorizontal, X, Plus, Minus, RotateCw, RotateCcw, Film, Zap, Palette, Award } from 'lucide-react';
 import type { FilterState, VisualStyle, Soundtrack, Genre, Theme, CriticsVsFans, Decade, Runtime } from '@/lib/types';
 import { MAX_GENRES } from '@/lib/types';
 import { ALL_VISUAL_STYLE_OPTIONS, ALL_SOUNDTRACK_OPTIONS, ALL_THEME_OPTIONS, GENRE_OPTIONS } from '@/lib/optionSets';
@@ -85,6 +85,8 @@ interface DirectorsConsoleProps {
   onOpenChange?: (open: boolean) => void;
   /** Call to re-fetch results with current filters (e.g. after changing sliders). */
   onRefresh?: () => void;
+  /** Reset all slate filters to default empty state. */
+  onClearSelections?: () => void;
 }
 
 function Section({
@@ -107,7 +109,13 @@ function Section({
   );
 }
 
-export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRefresh }: DirectorsConsoleProps) {
+export default function DirectorsConsole({
+  filters,
+  onUpdate,
+  onOpenChange,
+  onRefresh,
+  onClearSelections,
+}: DirectorsConsoleProps) {
   const [open, setOpen] = useState(false);
   const [expandedGenre, setExpandedGenre] = useState(false);
   const [expandedTheme, setExpandedTheme] = useState(false);
@@ -174,15 +182,30 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                 style={{ maxHeight: 'min(85dvh, calc(100svh - 2rem))' }}
               >
               <div className="flex items-center justify-between px-4 py-3 border-b border-brass/40 flex-shrink-0">
-                <h2 className="text-xl font-display font-semibold text-neon-gold text-neon-glow">
-                  Director&apos;s Slate
-                </h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xl font-display font-semibold text-neon-gold text-neon-glow">
+                    Director&apos;s Slate
+                  </h2>
+                  {typeof onClearSelections === 'function' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClearSelections();
+                      }}
+                      className="p-1.5 text-brass-light hover:text-neon-gold transition-colors"
+                      aria-label="Clear selections"
+                      title="Clear selections"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
                 <div className="flex items-center gap-2">
                   {typeof onRefresh === 'function' && (
                     <button
                       type="button"
                       onClick={() => { onRefresh?.(); closeModal(); }}
-                      className="flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-brass/50 text-brass-light hover:border-brass hover:bg-brass/10 transition-all text-sm font-medium"
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-brass/50 text-brass-light hover:border-brass hover:bg-brass/10 transition-all text-sm font-medium bg-cherry-950"
                     >
                       <RotateCw className="w-4 h-4" />
                       Refresh results
@@ -405,9 +428,9 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-brass-light mb-2">Academy Awards</label>
-                    <p className="text-xs text-cream mb-2">Best Picture only. Pick one: Any, Nominee, or Winner (mutually exclusive).</p>
-                    <div className="flex gap-2" role="radiogroup" aria-label="Academy Award Best Picture filter">
-                      {(['any', 'nominee', 'winner'] as const).map((opt) => (
+                    <p className="text-xs text-cream mb-2">Best Picture only. Pick one: Any, Nominee, Winner, or Both (winners + nominees).</p>
+                    <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Academy Award Best Picture filter">
+                      {(['any', 'nominee', 'winner', 'both'] as const).map((opt) => (
                         <button
                           key={opt}
                           type="button"
@@ -418,7 +441,7 @@ export default function DirectorsConsole({ filters, onUpdate, onOpenChange, onRe
                             filters.oscarFilter === opt ? 'border-brass bg-brass/15 text-neon-gold shadow-[0_0_20px_rgba(184,134,11,0.4)]' : 'border-brass/50 text-cream hover:border-brass hover:text-brass-light'
                           }`}
                         >
-                          {opt === 'any' ? 'Any' : opt === 'nominee' ? 'Nominee' : 'Winner'}
+                          {opt === 'any' ? 'Any' : opt === 'nominee' ? 'Nominee' : opt === 'winner' ? 'Winner' : 'Both'}
                         </button>
                       ))}
                     </div>

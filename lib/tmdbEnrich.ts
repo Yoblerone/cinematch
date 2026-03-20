@@ -7,13 +7,42 @@ import type { Movie, Genre, Theme, VisualStyle, Soundtrack, CriticsVsFans } from
 import type { FilterState } from './types';
 import type { TmdbMovieResult, TmdbDiscoverResponse } from './tmdb';
 import { GENRE_ID_TO_NAME, buildDiscoverSearchParams } from './tmdb';
-import { isOscarBestPictureWinner, isOscarBestPictureNominee } from './oscarWinners';
+import {
+  getOscarWinnerIds,
+  getOscarNomineeIds,
+  getOscarBothIds,
+  isOscarWinnerId,
+  isOscarNomineeId,
+  isOscarListedId,
+  getOscarAwardInfo,
+} from './data/oscar-truth';
 import { filterMovies } from './filterMovies';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 /** Fetch this many pages (20 per page) to get a pool for ranking; e.g. 3 = 60 movies. */
 const DISCOVER_PAGES = 3;
 const CONCURRENCY = 6;
+
+function hasSecondaryFilters(filters: FilterState): boolean {
+  if (filters.crowd != null) return true;
+  if (filters.genre.length > 0) return true;
+  if (filters.theme.length > 0) return true;
+  if (filters.visualStyle.length > 0) return true;
+  if (filters.soundtrack.length > 0) return true;
+  if (filters.cultClassic != null) return true;
+  if (!filters.aListCastAny || filters.aListCast !== 50) return true;
+  if (filters.criticsVsFans != null) return true;
+  if (filters.decade.length > 0) return true;
+  if (filters.runtime != null) return true;
+  if (!filters.directorProminenceAny || filters.directorProminence !== 50) return true;
+  if (filters.pacing !== 50) return true;
+  if (filters.intensity !== 50) return true;
+  if (filters.cryMeter !== 50) return true;
+  if (filters.humor !== 50) return true;
+  if (filters.romance !== 50) return true;
+  if (filters.suspense !== 50) return true;
+  return false;
+}
 
 /** Keyword name (lowercase) → 18 Theme/Mood tags. */
 function keywordToThemes(name: string): Theme[] {
@@ -324,8 +353,12 @@ export async function enrichMovie(apiKey: string, base: TmdbMovieResult): Promis
     hasAListCast: credits ? hasAListCast(credits.cast) : false,
     starPowerScore: credits ? starPowerScoreFromCast(credits.cast) : 0,
     criticsVsFans: criticsVsFans(voteAverage, voteCount),
-    oscarWinner: isOscarBestPictureWinner(base.id),
-    oscarNominee: isOscarBestPictureNominee(base.id),
+    oscarWinner: isOscarWinnerId(base.id),
+    oscarNominee: isOscarNomineeId(base.id) || isOscarWinnerId(base.id),
+    ...((): Partial<Movie> => {
+      const info = getOscarAwardInfo(base.id);
+      return info ? { academyAwardYear: info.year, academyAwardType: info.type } : {};
+    })(),
     runtimeMinutes: details?.runtime ?? 0,
     directorProminence,
     popularity,
@@ -366,10 +399,19 @@ async function fetchDiscoverPage(
     popularityLte: params.popularityLte,
   });
   const url = `${TMDB_BASE}/discover/movie?${new URLSearchParams({ ...q, api_key: apiKey }).toString()}`;
+  const debugUrl = url.replace(/api_key=[^&]+/, 'api_key=***');
+  if (params.oscarFilter === 'winner' || process.env.NODE_ENV !== 'production') {
+    console.log('[TMDB Discover]', debugUrl);
+  }
   const res = await fetch(url);
   if (!res.ok) throw new Error(`TMDB Discover ${res.status}`);
   const data = (await res.json()) as TmdbDiscoverResponse;
-  return data.results ?? [];
+  const results = data.results ?? [];
+  if (params.oscarFilter === 'winner') {
+    const total = (data as { total_results?: number }).total_results ?? results.length;
+    console.log('[TMDB Discover] Winner request: total_results=', total, 'page size=', results.length);
+  }
+  return results;
 }
 
 /** Minimum 2 pages (40 movies) for ranking pool. */
@@ -379,8 +421,83 @@ const DISCOVER_PAGES_CULT = 5;
 /** Options for discover (e.g. random start page for variety). */
 export type GetTmdbMatchesOptions = { discoverStartPage?: number };
 
+/** Minimal stub for enrichMovie when we only have a TMDB movie ID. */
+function stubResult(id: number): TmdbMovieResult {
+  return {
+    id,
+    title: '',
+    release_date: '',
+    vote_average: 0,
+    poster_path: null,
+    overview: null,
+    genre_ids: [],
+  };
+}
+
+/** Parse TMDB numeric id from our movie id (e.g. "tmdb-872585" -> 872585). */
+function tmdbIdFromMovieId(movieId: string): number {
+  const n = parseInt(movieId.replace(/^tmdb-/, ''), 10);
+  return Number.isNaN(n) ? 0 : n;
+}
+
+/** Fetch and enrich movies by TMDB IDs only; then keep only those in the allowed set. */
+async function fetchAndEnrichByIds(
+  apiKey: string,
+  ids: number[],
+  allowed: (id: number) => boolean,
+  filters: FilterState
+): Promise<Movie[]> {
+  const rawResults: TmdbMovieResult[] = ids.map((id) => stubResult(id));
+  const cache = new Map<number, Movie>();
+  const enrichOne = async (base: TmdbMovieResult): Promise<Movie> => {
+    const cached = cache.get(base.id);
+    if (cached) return cached;
+    const movie = await enrichMovie(apiKey, base);
+    cache.set(base.id, movie);
+    return movie;
+  };
+  const enriched: Movie[] = [];
+  for (let i = 0; i < rawResults.length; i += CONCURRENCY) {
+    const batch = rawResults.slice(i, i + CONCURRENCY);
+    const movies = await Promise.all(batch.map((b) => enrichOne(b)));
+    enriched.push(...movies);
+  }
+  const filtered = enriched.filter((m) => allowed(tmdbIdFromMovieId(m.id)));
+  const result = filterMovies(filtered, filters);
+  // "List of record" mode: if Oscar filter is the only active preference, keep strict year order.
+  // Otherwise keep score-based order so sliders/filters (e.g. romance) drive ranking.
+  if (!hasSecondaryFilters(filters)) {
+    result.sort((a, b) => {
+      const yearDiff = (b.year ?? 0) - (a.year ?? 0);
+      if (yearDiff !== 0) return yearDiff;
+      return (b.oscarWinner ? 1 : 0) - (a.oscarWinner ? 1 : 0);
+    });
+  }
+  return result;
+}
+
 /** Live API: discover/movie with with_genres + with_keywords from user, then enrich and rank. */
 export async function getTmdbMatches(apiKey: string, filters: FilterState, options?: GetTmdbMatchesOptions): Promise<Movie[]> {
+  const oscarFilter = String(filters.oscarFilter ?? 'any').toLowerCase();
+  const isWinnerOnly = oscarFilter === 'winner';
+  const isNomineeOnly = oscarFilter === 'nominee';
+  const isBothOnly = oscarFilter === 'both';
+
+  if (isWinnerOnly) {
+    const ids = getOscarWinnerIds();
+    return fetchAndEnrichByIds(apiKey, ids, isOscarWinnerId, filters);
+  }
+
+  if (isNomineeOnly) {
+    const ids = getOscarNomineeIds();
+    return fetchAndEnrichByIds(apiKey, ids, isOscarNomineeId, filters);
+  }
+
+  if (isBothOnly) {
+    const ids = getOscarBothIds();
+    return fetchAndEnrichByIds(apiKey, ids, isOscarListedId, filters);
+  }
+
   const baseParams: {
     genre: FilterState['genre'];
     decade: FilterState['decade'];

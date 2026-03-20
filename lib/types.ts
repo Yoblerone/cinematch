@@ -118,6 +118,10 @@ export interface Movie {
   criticsVsFans: CriticsVsFans;
   oscarWinner: boolean;
   oscarNominee: boolean;
+  /** Best Picture award year (e.g. 2024). Set when movie is in academy VIP list. */
+  academyAwardYear?: number;
+  /** Best Picture award type for label (e.g. "Academy Award Winner 2024"). */
+  academyAwardType?: 'Winner' | 'Nominee';
   runtimeMinutes: number;
   /** 0–100; maps to TMDB person popularity (director) when using API */
   directorProminence: number;
@@ -151,8 +155,14 @@ export interface FilterState {
   /** 0–100; only used when aListCastAny is false. 100 = highest star power first, 0 = lowest (indie ensembles) first. */
   aListCast: number;
   criticsVsFans: CriticsVsFans | null;
-  /** Any = no filter. Nominee = filter to Oscar nominee OR winner. Winner = same filter + sort winners first. */
-  oscarFilter: 'any' | 'nominee' | 'winner';
+  /**
+   * Best Picture (Academy Awards) filter.
+   * - `winner`: winners only
+   * - `nominee`: nominees only (excluding winners)
+   * - `both`: winners + nominees
+   * - `any`: no Best Picture filtering
+   */
+  oscarFilter: 'any' | 'nominee' | 'winner' | 'both';
   /** Multiple decades; empty = any. Date range spans min–max. */
   decade: Decade[];
   runtime: Runtime;

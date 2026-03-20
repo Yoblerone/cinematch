@@ -99,11 +99,20 @@ function scoreMovie(movie: Movie, filters: FilterState): number {
     const matchCount = filters.genre.filter((g) => movie.genre.includes(g)).length;
     if (matchCount > 0) score += 2 + matchCount * 2;
   }
-  /* Pedigree: Oscar keyword filters at API; here we rank. Nominee = small boost. Winner = +500 for Best Picture winners so they rank above other Oscar winners (e.g. technical). */
-  if (filters.oscarFilter === 'nominee' && (movie.oscarNominee || movie.oscarWinner)) score += 1;
+  /* Pedigree: Best Picture filters (no API keyword checks; we rank within the result set).
+   * Nominee = small boost.
+   * Winner = big boost.
+   * Both = nominees + winners in one selection.
+   */
+  if (filters.oscarFilter === 'nominee') {
+    if (movie.oscarNominee) score += 1;
+  }
+  if (filters.oscarFilter === 'both') {
+    if (movie.oscarNominee) score += 1;
+    if (movie.oscarWinner) score += 500;
+  }
   if (filters.oscarFilter === 'winner') {
-    if (movie.oscarWinner) score += 500; /* Best Picture winner (local list) – pushes above keyword-only winners */
-    else score += 0;
+    if (movie.oscarWinner) score += 500;
   }
   if (filters.criticsVsFans != null && movie.criticsVsFans === filters.criticsVsFans) score += 2;
   if (filters.decade.length > 0 && decadeMatch(movie.year, filters.decade)) score += 1;
@@ -174,8 +183,8 @@ export function filterMovies(movieList: Movie[], filters: FilterState): Movie[] 
     }
   }
 
-  /* Oscar Winner priority: when oscarFilter is 'winner', sort so winners appear first. */
-  if (filters.oscarFilter === 'winner') {
+  /* Oscar Winner priority: when oscarFilter includes winners, sort so winners appear first. */
+  if (filters.oscarFilter === 'winner' || filters.oscarFilter === 'both') {
     result = [...result].sort((a, b) => (b.oscarWinner ? 1 : 0) - (a.oscarWinner ? 1 : 0));
   }
 

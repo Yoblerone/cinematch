@@ -10,6 +10,7 @@ import {
   THEME_SETS,
   TAGS_PER_PAGE,
 } from '@/lib/optionSets';
+import StepResetButton from './StepResetButton';
 
 interface Step4AestheticProps {
   theme: Theme[];
@@ -18,6 +19,8 @@ interface Step4AestheticProps {
   onThemeToggle: (t: Theme) => void;
   onVisualStyleToggle: (v: VisualStyle) => void;
   onSoundtrackToggle: (v: Soundtrack) => void;
+  /** Clear theme / visual / sound selections (also resets tag pagination). */
+  onResetStep?: () => void;
 }
 
 /** Tag chip: same styling as The Basics — brass border, cream text; selected = brass bg + neon-gold. */
@@ -151,10 +154,18 @@ export default function Step4Aesthetic({
   onThemeToggle,
   onVisualStyleToggle,
   onSoundtrackToggle,
+  onResetStep,
 }: Step4AestheticProps) {
   const [themeIndex, setThemeIndex] = useState(0);
   const [visualIndex, setVisualIndex] = useState(0);
   const [soundtrackIndex, setSoundtrackIndex] = useState(0);
+
+  const handleResetStep = () => {
+    setThemeIndex(0);
+    setVisualIndex(0);
+    setSoundtrackIndex(0);
+    onResetStep?.();
+  };
 
   return (
     <motion.div
@@ -168,6 +179,7 @@ export default function Step4Aesthetic({
           The Aesthetic
         </h2>
         <p className="text-cream text-sm">Theme, visual style & sound</p>
+        {onResetStep != null && <StepResetButton onReset={handleResetStep} />}
       </div>
       <div className="scroll-area-slate space-y-5 max-w-2xl mx-auto max-h-[65vh] overflow-y-auto py-1">
         <OptionSection

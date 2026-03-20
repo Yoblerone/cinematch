@@ -126,8 +126,8 @@ export interface TmdbDiscoverParams {
   visualStyle?: VisualStyle[];
   /** When set, combined in with_keywords for sound/music. */
   soundtrack?: Soundtrack[];
-  /** Best Picture: when set, discover uses Academy Award keyword (250481 = Nominee, 272186 = Winner). */
-  oscarFilter?: 'any' | 'nominee' | 'winner';
+  /** Best Picture is handled by strict local ID fetch; no TMDB keyword. Kept for type compatibility. */
+  oscarFilter?: 'any' | 'nominee' | 'winner' | 'both';
   page?: number;
   /** vote_count.desc (default), vote_average.desc, or popularity.desc for A-List / high-profile. */
   sortBy?: 'vote_count.desc' | 'vote_average.desc' | 'popularity.desc';
@@ -193,11 +193,8 @@ export function buildDiscoverSearchParams(params: TmdbDiscoverParams): Record<st
   const soundtrackIds = (params.soundtrack ?? [])
     .map((s) => SOUNDTRACK_TO_KEYWORD_ID[s])
     .filter((id): id is number => id != null);
-  const oscarKeywordId =
-    params.oscarFilter === 'nominee' ? 250481 : params.oscarFilter === 'winner' ? 272186 : null;
-  const allKeywordIds = Array.from(
-    new Set([...themeIds, ...visualIds, ...soundtrackIds, ...(oscarKeywordId != null ? [oscarKeywordId] : [])])
-  );
+  /* Best Picture: strict local list only — no with_keywords (234473/250481) to avoid technical winners. */
+  const allKeywordIds = Array.from(new Set([...themeIds, ...visualIds, ...soundtrackIds]));
   if (allKeywordIds.length > 0) q.with_keywords = allKeywordIds.join('|');
   if (params.page != null) q.page = String(params.page);
   if (params.voteCountGte != null) q['vote_count.gte'] = String(params.voteCountGte);
