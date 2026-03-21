@@ -30,7 +30,7 @@ See **[DEPLOY.md](./DEPLOY.md)** for step-by-step instructions: push to GitHub, 
 ## Data & filtering
 
 - **`lib/mockData.ts`** — 20 movies with attributes aligned to every filter (crowd, pacing, intensity, cryMeter, visualStyle, soundtrack, isCultClassic, hasAListCast, criticsVsFans).
-- **`lib/filterMovies.ts`** — Filtering logic that cross-references all criteria; sliders use a ±30 band for pacing, intensity, and cry meter.
+- **`lib/filterMovies.ts`** — Filtering + ranking: genre base, then Energy slider keyword nukes/bonuses (`VIBE_EXTREME_MAP` in `lib/vibeScore.ts`), then critics/fans weight (TMDB keywords merged from `append_to_response` + `/movie/{id}/keywords`).
 
 ## Tech stack
 

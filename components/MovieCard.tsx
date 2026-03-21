@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Star, ExternalLink } from 'lucide-react';
+import { Star, ExternalLink, Play } from 'lucide-react';
 import type { Movie } from '@/lib/types';
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p';
@@ -56,11 +56,21 @@ export default function MovieCard({ movie, index, variant = 'compact', matchPerc
           >
             {movie.title}
           </h3>
-          <div className="flex flex-col items-end gap-0.5 shrink-0 text-neon-gold" title="Rating">
+          <div
+            className="flex flex-col items-end gap-0.5 shrink-0 text-neon-gold"
+            title={`TMDB rating: ${movie.rating.toFixed(1)} / 10 (vote_average)`}
+          >
             <div className="flex items-center gap-1">
               <Star className={isFeatured ? 'w-5 h-5' : 'w-4 h-4'} fill="currentColor" aria-hidden />
               <span className={`font-semibold tabular-nums ${isFeatured ? 'text-lg' : 'text-sm'}`}>
-                {movie.rating.toFixed(1)}
+                {movie.rating > 0 ? movie.rating.toFixed(1) : '—'}
+                {movie.rating > 0 && (
+                  <span
+                    className={`text-cream/90 font-normal opacity-80 ${isFeatured ? 'text-sm' : 'text-[10px]'}`}
+                  >
+                    /10
+                  </span>
+                )}
               </span>
             </div>
             {matchPercent != null && (
@@ -88,18 +98,36 @@ export default function MovieCard({ movie, index, variant = 'compact', matchPerc
         >
           &ldquo;{movie.tagline}&rdquo;
         </p>
-        {movie.imdbId && (
-          <a
-            href={`${IMDB_TITLE_BASE}/${movie.imdbId}/`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={`inline-flex items-center gap-1 text-brass hover:text-neon-gold transition-colors mt-2 ${isFeatured ? 'text-sm' : 'text-xs'}`}
-            title="View on IMDB"
+        {(movie.trailerKey != null && movie.trailerKey !== '') || movie.imdbId ? (
+          <div
+            className={`mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 ${isFeatured ? 'text-sm' : 'text-xs'}`}
           >
-            <ExternalLink className={isFeatured ? 'w-3.5 h-3.5' : 'w-3 h-3'} aria-hidden />
-            IMDB
-          </a>
-        )}
+            {movie.trailerKey != null && movie.trailerKey !== '' ? (
+              <a
+                href={`https://www.youtube.com/watch?v=${encodeURIComponent(movie.trailerKey)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`inline-flex items-center gap-1 text-brass hover:text-neon-gold transition-colors ${isFeatured ? 'text-sm' : 'text-xs'}`}
+                title="Watch trailer on YouTube"
+              >
+                <Play className={`shrink-0 ${isFeatured ? 'w-3.5 h-3.5' : 'w-3 h-3'}`} aria-hidden />
+                Trailer
+              </a>
+            ) : null}
+            {movie.imdbId ? (
+              <a
+                href={`${IMDB_TITLE_BASE}/${movie.imdbId}/`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-brass hover:text-neon-gold transition-colors"
+                title="View on IMDB"
+              >
+                <ExternalLink className={isFeatured ? 'w-3.5 h-3.5' : 'w-3 h-3'} aria-hidden />
+                IMDB
+              </a>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </motion.article>
   );

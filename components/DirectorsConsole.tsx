@@ -2,17 +2,18 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { SlidersHorizontal, X, Plus, Minus, RotateCw, RotateCcw, Film, Zap, Palette, Award } from 'lucide-react';
+import { SlidersHorizontal, X, Plus, Minus, RotateCcw, Film, Zap, Palette, Award } from 'lucide-react';
 import type { FilterState, VisualStyle, Soundtrack, Genre, Theme, CriticsVsFans, Decade, Runtime } from '@/lib/types';
 import { MAX_GENRES } from '@/lib/types';
 import { ALL_VISUAL_STYLE_OPTIONS, ALL_SOUNDTRACK_OPTIONS, ALL_THEME_OPTIONS, GENRE_OPTIONS } from '@/lib/optionSets';
+import EnergySliderRow from '@/components/wizard/EnergySliderRow';
 
 const SLIDER_CONFIG = [
-  { key: 'pacing' as const, label: 'Pacing', low: 'Slow Burn', high: 'Breakneck' },
-  { key: 'cryMeter' as const, label: 'Cry Meter', low: 'Cool / Unmoved', high: 'Tissues' },
-  { key: 'humor' as const, label: 'Humor', low: 'Dead Serious', high: 'Slapstick' },
-  { key: 'romance' as const, label: 'Romance', low: 'None', high: 'Full-on' },
-  { key: 'suspense' as const, label: 'Suspense', low: 'Calm', high: 'White-knuckle' },
+  { key: 'pacing' as const, label: 'Pacing' },
+  { key: 'cryMeter' as const, label: 'Cry Meter' },
+  { key: 'humor' as const, label: 'Humor' },
+  { key: 'romance' as const, label: 'Romance' },
+  { key: 'suspense' as const, label: 'Suspense' },
 ] as const;
 
 const PREVIEW_COUNT = 3;
@@ -99,7 +100,7 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-2xl border border-brass/40 overflow-hidden">
+    <section className="rounded-xl border border-brass/40 overflow-hidden">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-brass/30">
         <Icon className="w-4 h-4 text-brass" />
         <h3 className="text-sm font-display font-semibold text-neon-gold uppercase tracking-wide">{title}</h3>
@@ -146,13 +147,15 @@ export default function DirectorsConsole({
       <motion.button
         type="button"
         onClick={openModal}
-        className="fixed z-[45] flex items-center gap-2 px-5 py-3 rounded-2xl border-2 border-brass bg-cherry-900 text-neon-gold shadow-brass hover:bg-brass/20 transition-all font-medium min-h-[44px] right-[max(1.5rem,env(safe-area-inset-right))] bottom-[max(1.5rem,env(safe-area-inset-bottom))]"
+        className="fixed z-[45] rounded-3xl bg-brass p-[2px] shadow-brass hover:bg-brass/90 transition-all right-[max(1.5rem,env(safe-area-inset-right))] bottom-[max(1.5rem,env(safe-area-inset-bottom))]"
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}
         aria-label="Open Director's Slate"
       >
-        <SlidersHorizontal className="w-5 h-5" />
-        Director&apos;s Slate
+        <span className="flex min-h-[44px] items-center gap-2 rounded-[calc(1.5rem-2px)] bg-cherry-900 px-5 py-3 font-medium text-neon-gold transition-colors hover:bg-brass/20">
+          <SlidersHorizontal className="w-5 h-5" />
+          Director&apos;s Slate
+        </span>
       </motion.button>
 
       <AnimatePresence>
@@ -178,9 +181,10 @@ export default function DirectorsConsole({
                 animate={{ scale: 1 }}
                 exit={{ scale: 0.96 }}
                 transition={{ type: 'spring', damping: 25 }}
-                className="flex flex-col rounded-2xl border-2 border-brass bg-cherry-950 shadow-neon-glow overflow-hidden w-full max-w-2xl max-h-full min-h-0"
+                className="flex w-full max-w-2xl min-h-0 max-h-full flex-col rounded-3xl bg-brass p-[2px] shadow-neon-glow"
                 style={{ maxHeight: 'min(85dvh, calc(100svh - 2rem))' }}
               >
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[calc(1.5rem-2px)] bg-cherry-950">
               <div className="flex items-center justify-between px-4 py-3 border-b border-brass/40 flex-shrink-0">
                 <div className="flex items-center gap-2">
                   <h2 className="text-xl font-display font-semibold text-neon-gold text-neon-glow">
@@ -205,18 +209,17 @@ export default function DirectorsConsole({
                     <button
                       type="button"
                       onClick={() => { onRefresh?.(); closeModal(); }}
-                      className="flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-brass/50 text-brass-light hover:border-brass hover:bg-brass/10 transition-all text-sm font-medium bg-cherry-950"
+                      className="h-9 min-w-[2.25rem] px-3 flex items-center justify-center rounded-sm border-2 border-brass/50 text-brass-light hover:border-brass hover:bg-brass/10 transition-all text-sm font-medium bg-cherry-950"
                     >
-                      <RotateCw className="w-4 h-4" />
-                      Refresh results
+                      Search
                     </button>
                   )}
                   <button
                     type="button"
                     onClick={closeModal}
-                    className="p-2 rounded-lg border border-brass/50 text-brass-light hover:bg-brass/10"
+                    className="h-9 w-9 flex items-center justify-center rounded-sm border-2 border-brass/50 text-brass-light hover:bg-brass/10"
                   >
-                    <X className="w-5 h-5" />
+                    <X className="w-5 h-5" aria-hidden />
                   </button>
                 </div>
               </div>
@@ -288,25 +291,13 @@ export default function DirectorsConsole({
                   {/* Energy & emotion – sliders affect ranking only; closer match = higher in results */}
                   <Section title="Energy & emotion" icon={Zap}>
                     <div className="grid sm:grid-cols-2 gap-4">
-                  {SLIDER_CONFIG.map(({ key, label, low, high }) => (
-                    <div key={key} className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-brass-light text-sm">{label}</span>
-                        <span className="text-cream text-sm">{filters[key]}</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={0}
-                        max={100}
-                        value={filters[key]}
-                        onChange={(e) => onUpdate({ [key]: Number(e.target.value) })}
-                        className="w-full"
-                      />
-                      <div className="flex justify-between text-xs text-cream">
-                        <span>{low}</span>
-                        <span>{high}</span>
-                      </div>
-                    </div>
+                  {SLIDER_CONFIG.map(({ key, label }) => (
+                    <EnergySliderRow
+                      key={key}
+                      label={label}
+                      value={filters[key]}
+                      onChange={(v) => onUpdate({ [key]: v })}
+                    />
                   ))}
                     </div>
                   </Section>
@@ -375,7 +366,7 @@ export default function DirectorsConsole({
                             type="checkbox"
                             checked={filters.aListCastAny}
                             onChange={(e) => onUpdate({ aListCastAny: e.target.checked })}
-                            className="rounded border-brass/50 text-brass bg-cherry-900"
+                            className="rounded border-brass/50 bg-cherry-900 accent-[#B8860B] focus:ring-brass focus:ring-offset-cherry-900"
                           />
                           <span className="text-cream text-sm">Any</span>
                         </label>
@@ -405,7 +396,7 @@ export default function DirectorsConsole({
                             type="checkbox"
                             checked={filters.directorProminenceAny}
                             onChange={(e) => onUpdate({ directorProminenceAny: e.target.checked })}
-                            className="rounded border-brass/50 text-brass bg-cherry-900"
+                            className="rounded border-brass/50 bg-cherry-900 accent-[#B8860B] focus:ring-brass focus:ring-offset-cherry-900"
                           />
                           <span className="text-cream text-sm">Any</span>
                         </label>
@@ -470,6 +461,7 @@ export default function DirectorsConsole({
                     </div>
                   </Section>
                 </div>
+              </div>
               </div>
               </motion.div>
             </motion.div>

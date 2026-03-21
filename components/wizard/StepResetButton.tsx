@@ -14,7 +14,7 @@ export default function StepResetButton({
   label = 'Clear selections on this step',
 }: StepResetButtonProps) {
   return (
-    <div className="flex justify-center mt-2 mb-1">
+    <div className="mt-2 mb-1 flex w-full justify-center">
       <button
         type="button"
         onClick={onReset}

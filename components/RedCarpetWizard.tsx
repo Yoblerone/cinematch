@@ -78,8 +78,11 @@ export default function RedCarpetWizard() {
             /* non-JSON body */
           }
           if (!cancelled) {
-            if (res.ok) setResults(data.movies ?? []);
-            else setResults([]);
+            if (res.ok) {
+              const list = data.movies ?? [];
+              console.log('Client: Total Movies Received (session restore):', list.length);
+              setResults(list);
+            } else setResults([]);
           }
         } catch (e) {
           if (!cancelled && e instanceof Error && e.name !== 'AbortError') {
@@ -165,7 +168,9 @@ export default function RedCarpetWizard() {
         setError(data.error ?? data.details ?? 'Request failed');
         setResults([]);
       } else {
-        setResults(data.movies ?? []);
+        const list = data.movies ?? [];
+        console.log('Client: Total Movies Received:', list.length);
+        setResults(list);
         try {
           sessionStorage.setItem(SESSION_KEY, JSON.stringify({ filters: f, wasOnResults: true }));
         } catch {

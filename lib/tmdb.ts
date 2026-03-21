@@ -115,8 +115,10 @@ export const SOUNDTRACK_TO_KEYWORD_ID: Partial<Record<Soundtrack, number>> = {
 };
 
 export interface TmdbDiscoverParams {
-  /** Up to 3; OR in TMDB. */
+  /** Up to 3; `with_genres` join: comma = AND, pipe = OR. */
   genre?: Genre[];
+  /** Default `and`. Use `or` only when AND returns too few results (fallback). */
+  genreJoinMode?: 'and' | 'or';
   /** Multiple decades; we use min date–max date range. */
   decade?: (Decade & {})[];
   runtime: Runtime;
@@ -129,12 +131,20 @@ export interface TmdbDiscoverParams {
   /** Best Picture is handled by strict local ID fetch; no TMDB keyword. Kept for type compatibility. */
   oscarFilter?: 'any' | 'nominee' | 'winner' | 'both';
   page?: number;
-  /** vote_count.desc (default), vote_average.desc, or popularity.desc for A-List / high-profile. */
-  sortBy?: 'vote_count.desc' | 'vote_average.desc' | 'popularity.desc';
+  /** vote_count.desc (default), vote_average.desc, popularity.desc, or primary_release_date.desc for non-blockbuster pools. */
+  sortBy?:
+    | 'vote_count.desc'
+    | 'vote_average.desc'
+    | 'popularity.desc'
+    | 'primary_release_date.desc';
   /** Director prominence: force lesser-known (low) or heavy hitters (high) at API level. */
   voteCountGte?: number;
   voteCountLte?: number;
   popularityLte?: number;
+  /** TMDB discover: minimum vote_average (0–10). */
+  voteAverageGte?: number;
+  /** TMDB discover: maximum vote_average (0–10). */
+  voteAverageLte?: number;
 }
 
 export interface TmdbMovieResult {
@@ -160,12 +170,18 @@ export function buildDiscoverSearchParams(params: TmdbDiscoverParams): Record<st
   const q: Record<string, string> = {
     sort_by: sortBy,
     'vote_count.gte': '20',
+    /** Comma = AND: movie must have every selected genre (e.g. Family + Animation, not Family OR Drama). */
+    include_adult: 'false',
   };
   if (params.genre != null && params.genre.length > 0) {
     const ids = params.genre
       .map((g) => GENRE_NAME_TO_ID[g])
       .filter((id): id is number => id != null);
-    if (ids.length > 0) q.with_genres = ids.join('|');
+    if (ids.length > 0) {
+      /** `,` = AND (e.g. 3 genres → `28,12,16`); `|` = OR fallback only. */
+      const joiner = params.genreJoinMode === 'or' ? '|' : ',';
+      q.with_genres = ids.join(joiner);
+    }
   }
   if (params.decade != null && params.decade.length > 0) {
     const valid = params.decade.filter((d): d is NonNullable<Decade> => d != null);
@@ -200,6 +216,8 @@ export function buildDiscoverSearchParams(params: TmdbDiscoverParams): Record<st
   if (params.voteCountGte != null) q['vote_count.gte'] = String(params.voteCountGte);
   if (params.voteCountLte != null) q['vote_count.lte'] = String(params.voteCountLte);
   if (params.popularityLte != null) q['popularity.lte'] = String(params.popularityLte);
+  if (params.voteAverageGte != null) q['vote_average.gte'] = String(params.voteAverageGte);
+  if (params.voteAverageLte != null) q['vote_average.lte'] = String(params.voteAverageLte);
   return q;
 }
 

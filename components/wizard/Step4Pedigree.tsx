@@ -65,7 +65,7 @@ export default function Step4Pedigree({
                   type="checkbox"
                   checked={aListCastAny}
                   onChange={(e) => onAListCastAny(e.target.checked)}
-                  className="rounded border-brass/50 text-brass bg-cherry-900"
+                  className="rounded border-brass/50 bg-cherry-900 accent-[#B8860B] focus:ring-brass focus:ring-offset-cherry-900"
                 />
                 <span className="text-xs text-cream whitespace-nowrap">Any</span>
               </label>
@@ -96,7 +96,7 @@ export default function Step4Pedigree({
                   type="checkbox"
                   checked={directorProminenceAny}
                   onChange={(e) => onDirectorProminenceAny(e.target.checked)}
-                  className="rounded border-brass/50 text-brass bg-cherry-900"
+                  className="rounded border-brass/50 bg-cherry-900 accent-[#B8860B] focus:ring-brass focus:ring-offset-cherry-900"
                 />
                 <span className="text-xs text-cream whitespace-nowrap">Any</span>
               </label>

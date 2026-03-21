@@ -1,4 +1,21 @@
 import type { Movie, FilterState } from './types';
+import {
+  bayesianWeightedRating,
+  BAYESIAN_PRIOR_WEIGHT_M,
+  criticsFansMultiplier,
+} from './criticsFansRank';
+import { GENRE_NAME_TO_ID } from './tmdb';
+import { calculateCustomRank, PROMINENCE_TRUTH_LIST } from './prominence';
+import {
+  calculateEnergyScore,
+  calculateScore,
+  getNormalizedKeywordNames,
+  listMatchedPhrases,
+  VIBE_CONFLICT_MAP,
+} from './vibeScore';
+
+/** Critics/fans applied last on a 0–100 normalized scale (metadata order: genre → penalties → bonuses → CF). */
+const CRITICS_FANS_WEIGHT = 0.42;
 
 const CULT_POPULARITY_MIN = 5;
 const CULT_VOTE_COUNT_MIN = 1000;
@@ -88,22 +105,42 @@ function atmosphereScore(movie: Movie, filters: FilterState): number {
   return total;
 }
 
-function scoreMovie(movie: Movie, filters: FilterState): number {
+/** True when the movie’s TMDB `genre_ids` include every selected genre id (preferred), else name fallback. */
+function movieHasAllSelectedGenres(movie: Movie, filters: FilterState): boolean {
+  if (filters.genre.length === 0) return false;
+  const needed = filters.genre.map((g) => GENRE_NAME_TO_ID[g]).filter((id): id is number => id != null);
+  if (needed.length !== filters.genre.length) {
+    return filters.genre.every((g) => movie.genre.includes(g));
+  }
+  const ids = movie.genreIds;
+  if (ids != null && ids.length > 0) {
+    return needed.every((id) => ids.includes(id));
+  }
+  return filters.genre.every((g) => movie.genre.includes(g));
+}
+
+/**
+ * Taste / filter alignment only (no cast/director prominence — that is `calculateCustomRank`).
+ * Genre: **Perfect Match** bonus when all selected genres appear (by `genre_ids` when present).
+ * 3-genre matches get a larger bonus than 2-genre.
+ */
+/**
+ * Taste alignment without Energy sliders (atmosphere, genre bonuses, Oscar, decade, etc.).
+ * Match % / sort use `scoreGenreForMatch` + `calculateEnergyScore` + weighted critics/fans; this stays for tooling/debug.
+ */
+export function scoreMovieTasteNonVibe(movie: Movie, filters: FilterState): number {
   let score = atmosphereScore(movie, filters);
   if (filters.crowd != null && movie.crowd.includes(filters.crowd)) score += 2;
-  for (const key of ['pacing', 'cryMeter', 'humor', 'romance', 'suspense'] as const) {
-    if (inBand(movie[key], filters[key])) score += 1;
-    score += (30 - Math.min(Math.abs(movie[key] - filters[key]), 30)) / 30;
-  }
   if (filters.genre.length > 0) {
-    const matchCount = filters.genre.filter((g) => movie.genre.includes(g)).length;
-    if (matchCount > 0) score += 2 + matchCount * 2;
+    const allMatch = movieHasAllSelectedGenres(movie, filters);
+    if (allMatch) {
+      const n = filters.genre.length;
+      /** Base Perfect Match + per-genre tick; triple-genre gets a clear lift over double. */
+      score += 50 + n * 2;
+      if (n >= 2) score += 12;
+      if (n >= 3) score += 38;
+    }
   }
-  /* Pedigree: Best Picture filters (no API keyword checks; we rank within the result set).
-   * Nominee = small boost.
-   * Winner = big boost.
-   * Both = nominees + winners in one selection.
-   */
   if (filters.oscarFilter === 'nominee') {
     if (movie.oscarNominee) score += 1;
   }
@@ -114,12 +151,10 @@ function scoreMovie(movie: Movie, filters: FilterState): number {
   if (filters.oscarFilter === 'winner') {
     if (movie.oscarWinner) score += 500;
   }
-  if (filters.criticsVsFans != null && movie.criticsVsFans === filters.criticsVsFans) score += 2;
   if (filters.decade.length > 0 && decadeMatch(movie.year, filters.decade)) score += 1;
   if (filters.runtime != null && runtimeMatch(movie.runtimeMinutes, filters.runtime)) score += 1;
   if (!filters.directorProminenceAny && filters.directorProminence > 0 && movie.directorProminence >= filters.directorProminence) score += 4;
   if (!filters.aListCastAny && (movie.starPowerScore ?? 0) > 0) score += 2;
-  /* Hidden Gem boost: when Cult Classic filter is on, prioritize cult signature. */
   if (filters.cultClassic === true && hasCultSignature(movie)) {
     const pop = (movie.popularity ?? 0) + 1;
     const boxOffice = movie.boxOffice + 1;
@@ -129,64 +164,186 @@ function scoreMovie(movie: Movie, filters: FilterState): number {
   return score;
 }
 
-export function filterMovies(movieList: Movie[], filters: FilterState): Movie[] {
+/** Genre alignment for match % (60% bucket, half of that shared with critics/fans). */
+function scoreGenreForMatch(movie: Movie, filters: FilterState): number {
+  if (filters.genre.length === 0) return 50;
+  if (movieHasAllSelectedGenres(movie, filters)) {
+    const n = filters.genre.length;
+    return 40 + n * 25 + (n >= 2 ? 30 : 0) + (n >= 3 ? 45 : 0);
+  }
+  return 18;
+}
+
+/** Critics vs fans alignment for match % (same 60% bucket as genre). */
+function scoreCriticsFansForMatch(movie: Movie, filters: FilterState): number {
+  if (filters.criticsVsFans == null) return 50;
+  if (filters.criticsVsFans === 'both') {
+    return bayesianWeightedRating(movie.rating ?? 0, movie.voteCount ?? 0, BAYESIAN_PRIOR_WEIGHT_M) * 10;
+  }
+  return criticsFansMultiplier(movie, filters) * 40;
+}
+
+/** @deprecated Legacy taste + energy bands; ranking uses genre + CF + vibe blend. */
+export function scoreMovieTaste(movie: Movie, filters: FilterState): number {
+  let score = scoreMovieTasteNonVibe(movie, filters);
+  for (const key of ['pacing', 'cryMeter', 'humor', 'romance', 'suspense'] as const) {
+    if (inBand(movie[key], filters[key])) score += 1;
+    score += (30 - Math.min(Math.abs(movie[key] - filters[key]), 30)) / 30;
+  }
+  return score;
+}
+
+export type FilterMoviesOptions = {
+  /**
+   * `all` (default): movie must include every selected genre (strict AND).
+   * `any`: movie must match at least one selected genre — used after TMDB OR fallback so the pool isn’t empty.
+   */
+  genreFilterMode?: 'all' | 'any';
+};
+
+export function filterMovies(
+  movieList: Movie[],
+  filters: FilterState,
+  options?: FilterMoviesOptions
+): Movie[] {
+  const genreFilterMode = options?.genreFilterMode ?? 'all';
   const filtered = movieList.filter((movie) => {
     if (filters.crowd != null && !movie.crowd.includes(filters.crowd)) return false;
-    if (filters.genre.length > 0 && !filters.genre.some((g) => movie.genre.includes(g))) return false;
+    if (filters.genre.length > 0) {
+      if (genreFilterMode === 'any') {
+        if (!filters.genre.some((g) => movie.genre.includes(g))) return false;
+      } else if (!filters.genre.every((g) => movie.genre.includes(g))) return false;
+    }
     const cult = hasCultSignature(movie);
     if (filters.cultClassic === true && !cult) return false;
     if (filters.cultClassic === false && cult) return false;
     if (filters.decade.length > 0 && !decadeMatch(movie.year, filters.decade)) return false;
     if (filters.runtime != null && !runtimeMatch(movie.runtimeMinutes, filters.runtime)) return false;
-    /* Pedigree (Oscar, Critics vs Fans, A-List, Director): rank only, no filtering */
     return true;
   });
-  const withScores = filtered.map((m) => ({ movie: m, score: scoreMovie(m, filters) }));
-  withScores.sort((a, b) => b.score - a.score);
-  let result = withScores.map((x) => x.movie);
 
-  /* Director Prominence: when "Any" is checked, skip. Otherwise rank by prominence. */
-  if (filters.directorProminenceAny) return result;
+  const genreRaws = filtered.map((m) => scoreGenreForMatch(m, filters));
+  const cfRaws = filtered.map((m) => scoreCriticsFansForMatch(m, filters));
+  const minC = cfRaws.length ? Math.min(...cfRaws) : 0;
+  const maxC = cfRaws.length ? Math.max(...cfRaws) : 1;
+  const cfNorm01 = (c: number) => (maxC === minC ? 0.5 : (c - minC) / (maxC - minC));
 
-  const dp = filters.directorProminence;
-  if (dp >= 75) {
-    result = [...result].sort((a, b) => prominenceScore(b) - prominenceScore(a));
-  } else if (dp <= 25) {
-    /* Strictly lowest popularity and vote_count first. Captain America rule: at 0, popularity > 50 goes to the very bottom. */
-    const pop = (m: Movie) => m.popularity ?? 0;
-    const votes = (m: Movie) => m.voteCount ?? 0;
-    if (dp === 0) {
-      const blockbusters = result.filter((m) => pop(m) > 50);
-      const rest = result.filter((m) => pop(m) <= 50);
-      rest.sort((a, b) => {
-        const pa = pop(a), pb = pop(b);
-        if (pa !== pb) return pa - pb;
-        return votes(a) - votes(b);
-      });
-      result = [...rest, ...blockbusters];
-    } else {
-      result = [...result].sort((a, b) => {
-        const pa = pop(a), pb = pop(b);
-        if (pa !== pb) return pa - pb;
-        return votes(a) - votes(b);
-      });
+  /** Tiny tie-break so ordering is stable; does not swamp genre + energy. */
+  const tieBreak = (m: Movie) =>
+    (m.rating ?? 0) * 0.04 + Math.log1p(m.voteCount ?? 0) * 0.02;
+
+  /**
+   * Hierarchy: **Genre (base)** → **main plot** (anchor / protagonist / antagonist from `VIBE_CONFLICT_MAP`)
+   * → **metadata** (`VIBE_EXTREME_MAP` nukes + fine-tuning) → **critics/fans** (weighted) → tie-break.
+   */
+  const preScores = filtered.map((m, i) => {
+    const g = genreRaws[i]!;
+    const c = cfRaws[i]!;
+    const cfComponent = CRITICS_FANS_WEIGHT * cfNorm01(c) * 100;
+    const { penalties, bonuses } = calculateEnergyScore(m, filters);
+    return g + penalties + bonuses + cfComponent + tieBreak(m);
+  });
+
+  const minP = preScores.length ? Math.min(...preScores) : 0;
+  const maxP = preScores.length ? Math.max(...preScores) : 1;
+  const spanP = maxP - minP;
+
+  const ranked = filtered.map((m, i) => {
+    const customRank = calculateCustomRank(m, filters, PROMINENCE_TRUTH_LIST);
+    m.customRank = customRank;
+    const blend01 =
+      spanP <= 1e-12 ? 0.5 : (preScores[i]! - minP) / spanP;
+    return { movie: m, blend01 };
+  });
+
+  ranked.forEach((x) => {
+    x.movie.matchPercentage = Math.round(x.blend01 * 100);
+  });
+
+  /** Strict order by displayed match %, then finer blend, then rating / votes. */
+  ranked.sort((a, b) => {
+    const mp = (b.movie.matchPercentage ?? 0) - (a.movie.matchPercentage ?? 0);
+    if (mp !== 0) return mp > 0 ? 1 : -1;
+    const diffBlend = b.blend01 - a.blend01;
+    if (Math.abs(diffBlend) > 1e-12) return diffBlend > 0 ? 1 : -1;
+    const br = b.movie.rating ?? 0;
+    const ar = a.movie.rating ?? 0;
+    if (br !== ar) return br > ar ? 1 : -1;
+    return (b.movie.voteCount ?? 0) - (a.movie.voteCount ?? 0);
+  });
+
+  if (process.env.NODE_ENV === 'development' && ranked.length > 0) {
+    const first = ranked[0]!.movie;
+    const kw = first.keywordNames ?? [];
+    console.log(`[Cinematch] #1 result keywords (${first.title})`, {
+      count: kw.length,
+      keywords: kw,
+      hint:
+        kw.length === 0
+          ? 'No keywords — verify TMDB append_to_response=keywords and /movie/{id}/keywords merge in tmdbEnrich.enrichMovie'
+          : undefined,
+    });
+
+    const top5 = ranked.slice(0, 5);
+    const payload = top5.map(({ movie: m }, idx) => {
+      const gi = filtered.indexOf(m);
+      const g = gi >= 0 ? scoreGenreForMatch(m, filters) : 0;
+      const c = gi >= 0 ? cfRaws[gi]! : 0;
+      const cfComponent = CRITICS_FANS_WEIGHT * cfNorm01(c) * 100;
+      const breakdown = calculateScore(m, filters, g, cfComponent);
+      return {
+        rank: idx + 1,
+        title: m.title,
+        matchPercentage: m.matchPercentage,
+        ...breakdown,
+        keywordCount: (m.keywordNames ?? []).length,
+      };
+    });
+    console.log(
+      '[Cinematch] Top 5 match breakdown (genre → main plot → metadata → CF):',
+      JSON.stringify(payload, null, 2)
+    );
+
+    /** Logic audit: Romance slider > 85 — antagonist hits (e.g. war) must apply −100 and sink war films. */
+    if (filters.romance > 85) {
+      const romanceAnt = VIBE_CONFLICT_MAP.romance.antagonists;
+      const top = ranked[0]?.movie;
+      if (top) {
+        const kn = getNormalizedKeywordNames(top);
+        const matchedAnt = listMatchedPhrases(kn, romanceAnt);
+        const energy = calculateEnergyScore(top, filters);
+        const romAxis = energy.axes.find((a) => a.axis === 'romance');
+        console.log('[Cinematch] Romance>85 #1 main-plot audit', {
+          title: top.title,
+          keywordCount: top.keywordNames?.length ?? 0,
+          keywords: top.keywordNames ?? [],
+          matchedRomanceAntagonists: matchedAnt,
+          antagonistPenaltyApplied: romAxis?.antagonistConflictPenalty ?? 0,
+          expectedNukeIfWarLike: matchedAnt.length > 0 ? -100 : 0,
+        });
+      }
+
+      const dunkirkEntry = ranked.find((r) => r.movie.title.toLowerCase().includes('dunkirk'));
+      if (dunkirkEntry) {
+        const m = dunkirkEntry.movie;
+        const kn = getNormalizedKeywordNames(m);
+        const matchedAnt = listMatchedPhrases(kn, romanceAnt);
+        const energy = calculateEnergyScore(m, filters);
+        const romAxis = energy.axes.find((a) => a.axis === 'romance');
+        console.warn('[Cinematch] Dunkirk still in ranked list (Romance>85) — conflict audit', {
+          rankApprox: ranked.indexOf(dunkirkEntry) + 1,
+          title: m.title,
+          keywords: m.keywordNames ?? [],
+          matchedRomanceAntagonists: matchedAnt,
+          antagonistPenaltyApplied: romAxis?.antagonistConflictPenalty ?? 0,
+          warOrMilitaryInKeywords:
+            matchedAnt.includes('war') ||
+            matchedAnt.includes('military') ||
+            (m.keywordNames ?? []).some((x) => /war|military|battle/i.test(x)),
+        });
+      }
     }
   }
 
-  /* A-List Cast (Star Power): when "Any" is unchecked, rank by star power. 100 = highest first, 0 = lowest first. */
-  if (!filters.aListCastAny) {
-    const starPower = (m: Movie) => m.starPowerScore ?? 0;
-    if (filters.aListCast >= 50) {
-      result = [...result].sort((a, b) => starPower(b) - starPower(a));
-    } else {
-      result = [...result].sort((a, b) => starPower(a) - starPower(b));
-    }
-  }
-
-  /* Oscar Winner priority: when oscarFilter includes winners, sort so winners appear first. */
-  if (filters.oscarFilter === 'winner' || filters.oscarFilter === 'both') {
-    result = [...result].sort((a, b) => (b.oscarWinner ? 1 : 0) - (a.oscarWinner ? 1 : 0));
-  }
-
-  return result;
+  return ranked.map((x) => x.movie);
 }

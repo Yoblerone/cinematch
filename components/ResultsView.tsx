@@ -85,9 +85,6 @@ export default function ResultsView({
   }, [results.length, start]);
 
   const displayed = results.slice(start, start + RESULTS_PAGE_SIZE);
-  const hasOsarFilter = filters.oscarFilter !== 'any';
-  const hasSecondaryFilter = filters.genre.length > 0 || filters.decade.length > 0 || filters.runtime != null;
-  const shouldShowMatchPercent = !hasOsarFilter || hasSecondaryFilter;
   const hasNext = start + RESULTS_PAGE_SIZE < results.length;
   const hasPrevious = resultsOffset > 0;
   const pageLabel =
@@ -96,6 +93,10 @@ export default function ResultsView({
       : results.length <= RESULTS_PAGE_SIZE
         ? `1–${results.length}`
         : `${start + 1}–${Math.min(start + RESULTS_PAGE_SIZE, results.length)} of ${results.length}`;
+
+  const hasOsarFilter = filters.oscarFilter !== 'any';
+  const hasSecondaryFilter = filters.genre.length > 0 || filters.decade.length > 0 || filters.runtime != null;
+  const shouldShowMatchPercent = !hasOsarFilter || hasSecondaryFilter;
 
   return (
     <div className="min-h-screen bg-cherry-950 relative">
@@ -211,9 +212,11 @@ export default function ResultsView({
                     {displayed.map((movie, i) => {
                       const globalIdx = start + i;
                       const matchPercent =
-                        movie.rating >= 0.5
-                          ? Math.round((movie.rating / 10) * 100)
-                          : Math.round(Math.min(99, Math.max(65, 96 - globalIdx * 0.4)));
+                        movie.matchPercentage != null
+                          ? movie.matchPercentage
+                          : movie.rating >= 0.5
+                            ? Math.round((movie.rating / 10) * 100)
+                            : Math.round(Math.min(99, Math.max(65, 96 - globalIdx * 0.4)));
                       return (
                         <MovieCard
                           key={movie.id}

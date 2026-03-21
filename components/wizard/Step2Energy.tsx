@@ -2,13 +2,14 @@
 
 import { motion } from 'framer-motion';
 import StepResetButton from './StepResetButton';
+import EnergySliderRow from './EnergySliderRow';
 
 const sliders = [
-  { key: 'pacing' as const, label: 'Pacing', low: 'Slow Burn', high: 'Breakneck' },
-  { key: 'cryMeter' as const, label: 'Cry Meter', low: 'Cool / Unmoved', high: 'Tissues' },
-  { key: 'humor' as const, label: 'Humor', low: 'Dead Serious', high: 'Slapstick' },
-  { key: 'romance' as const, label: 'Romance', low: 'None', high: 'Full-on' },
-  { key: 'suspense' as const, label: 'Suspense', low: 'Calm', high: 'White-knuckle' },
+  { key: 'pacing' as const, label: 'Pacing' },
+  { key: 'cryMeter' as const, label: 'Cry Meter' },
+  { key: 'humor' as const, label: 'Humor' },
+  { key: 'romance' as const, label: 'Romance' },
+  { key: 'suspense' as const, label: 'Suspense' },
 ] as const;
 
 interface Step2EnergyProps {
@@ -39,37 +40,26 @@ export default function Step2Energy({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="space-y-8"
+      className="mx-auto flex w-full max-w-xl flex-col items-center pl-5 pr-3 sm:pl-8 sm:pr-4"
     >
-      <div className="text-center">
-        <h2 className="text-3xl font-display font-semibold text-neon-gold text-neon-glow mb-2">
+      {/* One column: title, subtitle, reset, and sliders share the same center line */}
+      <div className="flex w-full flex-col items-center text-center">
+        <h2 className="mb-2 text-3xl font-display font-semibold text-neon-gold text-neon-glow">
           The Energy & Emotion
         </h2>
-        <p className="text-cream text-sm">Set the vibe</p>
+        <p className="text-sm text-cream">Set the vibe</p>
         {onResetStep && <StepResetButton onReset={onResetStep} />}
       </div>
-      <div className="scroll-area-slate space-y-6 max-w-xl mx-auto max-h-[55vh] overflow-y-auto">
+      <div className="scroll-area-slate mt-8 w-full space-y-6 max-h-[55vh] overflow-y-auto">
         {sliders.map((slider) => {
-          const { key, label, low, high } = slider;
+          const { key, label } = slider;
           return (
-            <div key={key} className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-brass-light">{label}</span>
-                <span className="text-cream text-sm">{values[key]}</span>
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={values[key]}
-                onChange={(e) => onChange(key, Number(e.target.value))}
-                className="w-full"
-              />
-              <div className="flex justify-between text-xs text-cream">
-                <span>{low}</span>
-                <span>{high}</span>
-              </div>
-            </div>
+            <EnergySliderRow
+              key={key}
+              label={label}
+              value={values[key]}
+              onChange={(v) => onChange(key, v)}
+            />
           );
         })}
       </div>

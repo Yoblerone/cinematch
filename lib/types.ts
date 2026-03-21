@@ -106,11 +106,16 @@ export interface Movie {
   romance: number;    // 0 = none, 100 = full-on
   suspense: number;   // 0 = calm, 100 = white-knuckle
   genre: Genre[];
+  /** TMDB `genre_ids` when available — used for perfect multi-genre match scoring. */
+  genreIds?: number[];
+  /** TMDB keyword names from movie details (append_to_response=keywords) — vibe scoring. */
+  keywordNames?: string[];
   theme: Theme[];
   visualStyle: VisualStyle[];
   soundtrack: Soundtrack[];
   boxOffice: number;
   budget: number;
+  /** TMDB `vote_average` (0–10), same scale as TMDB website. */
   rating: number;
   hasAListCast: boolean;
   /** Star power score for ranking: 0 (no A-List in top 5), 30 (1–2 A-List), 100 (3+ A-List). A-List = TMDB person popularity > 50. */
@@ -125,15 +130,26 @@ export interface Movie {
   runtimeMinutes: number;
   /** 0–100; maps to TMDB person popularity (director) when using API */
   directorProminence: number;
+  /** Raw TMDB director popularity (same scale as cast credits) — used for prominence scoring. */
+  directorPopularityRaw?: number;
   /** TMDB movie popularity (for Cult Signature: longevity). */
   popularity?: number;
   /** TMDB vote_count (for Cult Signature: devotion range 1k–15k). */
   voteCount?: number;
   /** IMDB id (e.g. "tt0137523") for linking to https://www.imdb.com/title/{imdbId}/ */
   imdbId?: string | null;
+  /** YouTube video id from TMDB append videos, or null when missing / not a YouTube Trailer. */
+  trailerKey?: string | null;
+  /** Lightweight credits for prominence ranking (top cast + director). IDs = TMDB person id. */
+  castCredits?: { id: number; name: string; popularity: number; order?: number }[];
+  crewCredits?: { id: number; name: string; job: string; popularity: number }[];
+  /** Composite ranking signal from prominence utility. */
+  customRank?: number;
+  /** 0–100 match % from server ranking (taste + prominence); highest = best match. */
+  matchPercentage?: number;
 }
 
-/** Max genres user can select (TMDB discover uses OR). */
+/** Max genres user can select (TMDB discover uses AND for multiple). */
 export const MAX_GENRES = 3;
 
 export interface FilterState {
@@ -144,7 +160,7 @@ export interface FilterState {
   humor: number;
   romance: number;
   suspense: number;
-  /** Up to MAX_GENRES; empty = any. TMDB with_genres OR. */
+  /** Up to MAX_GENRES; empty = any. Multiple genres = AND (must match all). */
   genre: Genre[];
   theme: Theme[];
   visualStyle: VisualStyle[];
