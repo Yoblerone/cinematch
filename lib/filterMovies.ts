@@ -11,12 +11,13 @@ import {
   calculateScore,
   getNormalizedKeywordNames,
   listMatchedPhrases,
-  moviePassesMaxEnergySlidersVibeGate,
   VIBE_CONFLICT_MAP,
 } from './vibeScore';
 
 /** Critics/fans applied last on a 0–100 normalized scale (metadata order: genre → penalties → bonuses → CF). */
 const CRITICS_FANS_WEIGHT = 0.42;
+const EXTREME_VIBE_WEIGHT = 0.8;
+const EXTREME_POP_QUALITY_WEIGHT = 0.2;
 
 const CULT_POPULARITY_MIN = 5;
 const CULT_VOTE_COUNT_MIN = 1000;
@@ -200,7 +201,7 @@ export type FilterMoviesOptions = {
    * `any`: movie must match at least one selected genre — used after TMDB OR fallback so the pool isn’t empty.
    */
   genreFilterMode?: 'all' | 'any';
-  /** When true (Academy list mode), do not drop rows that fail max-slider vibe gate — scoring only. */
+  /** @deprecated No-op — max-slider keyword trim removed; kept for call-site compatibility. */
   skipMaxSliderVibeTrim?: boolean;
 };
 
@@ -210,7 +211,6 @@ export function filterMovies(
   options?: FilterMoviesOptions
 ): Movie[] {
   const genreFilterMode = options?.genreFilterMode ?? 'all';
-  const skipMaxSliderVibeTrim = options?.skipMaxSliderVibeTrim === true;
   const filtered = movieList.filter((movie) => {
     if (filters.crowd != null && !movie.crowd.includes(filters.crowd)) return false;
     if (filters.genre.length > 0) {
@@ -231,6 +231,12 @@ export function filterMovies(
   const minC = cfRaws.length ? Math.min(...cfRaws) : 0;
   const maxC = cfRaws.length ? Math.max(...cfRaws) : 1;
   const cfNorm01 = (c: number) => (maxC === minC ? 0.5 : (c - minC) / (maxC - minC));
+  const anySliderAt100 =
+    filters.pacing === 100 ||
+    filters.cryMeter === 100 ||
+    filters.humor === 100 ||
+    filters.romance === 100 ||
+    filters.suspense === 100;
 
   /** Tiny tie-break so ordering is stable; does not swamp genre + energy. */
   const tieBreak = (m: Movie) =>
@@ -240,13 +246,33 @@ export function filterMovies(
    * Hierarchy: **Genre (base)** → **main plot** (anchor / protagonist / antagonist from `VIBE_CONFLICT_MAP`)
    * → **metadata** (`VIBE_EXTREME_MAP` nukes + fine-tuning) → **critics/fans** (weighted) → tie-break.
    */
-  const preScores = filtered.map((m, i) => {
+  const vibeRaws = filtered.map((m) => {
+    const { penalties, bonuses } = calculateEnergyScore(m, filters);
+    return penalties + bonuses;
+  });
+
+  const popQualityRaws = filtered.map((m, i) => {
     const g = genreRaws[i]!;
     const c = cfRaws[i]!;
     const cfComponent = CRITICS_FANS_WEIGHT * cfNorm01(c) * 100;
-    const { penalties, bonuses } = calculateEnergyScore(m, filters);
-    return g + penalties + bonuses + cfComponent + tieBreak(m);
+    return g + cfComponent + tieBreak(m);
   });
+
+  const norm01 = (arr: number[]): number[] => {
+    const lo = arr.length ? Math.min(...arr) : 0;
+    const hi = arr.length ? Math.max(...arr) : 1;
+    const span = hi - lo;
+    if (span <= 1e-12) return arr.map(() => 0.5);
+    return arr.map((x) => (x - lo) / span);
+  };
+
+  const vibe01 = norm01(vibeRaws);
+  const popQuality01 = norm01(popQualityRaws);
+  const preScores = filtered.map((_, i) =>
+    anySliderAt100
+      ? EXTREME_VIBE_WEIGHT * vibe01[i]! + EXTREME_POP_QUALITY_WEIGHT * popQuality01[i]!
+      : vibe01[i]! + popQuality01[i]!
+  );
 
   const minP = preScores.length ? Math.min(...preScores) : 0;
   const maxP = preScores.length ? Math.max(...preScores) : 1;
@@ -261,11 +287,14 @@ export function filterMovies(
   });
 
   ranked.forEach((x) => {
+    x.movie.finalMatchScore = x.blend01 * 100;
     x.movie.matchPercentage = Math.round(x.blend01 * 100);
   });
 
-  /** Strict order by displayed match %, then finer blend, then rating / votes. */
+  /** Strict order by finalMatchScore, then tie-breaks. */
   ranked.sort((a, b) => {
+    const fs = (b.movie.finalMatchScore ?? 0) - (a.movie.finalMatchScore ?? 0);
+    if (Math.abs(fs) > 1e-12) return fs > 0 ? 1 : -1;
     const mp = (b.movie.matchPercentage ?? 0) - (a.movie.matchPercentage ?? 0);
     if (mp !== 0) return mp > 0 ? 1 : -1;
     const diffBlend = b.blend01 - a.blend01;
@@ -276,16 +305,7 @@ export function filterMovies(
     return (b.movie.voteCount ?? 0) - (a.movie.voteCount ?? 0);
   });
 
-  const anySliderAt100 =
-    filters.pacing === 100 ||
-    filters.cryMeter === 100 ||
-    filters.humor === 100 ||
-    filters.romance === 100 ||
-    filters.suspense === 100;
-  const rankedFiltered =
-    anySliderAt100 && !skipMaxSliderVibeTrim
-      ? ranked.filter((x) => moviePassesMaxEnergySlidersVibeGate(x.movie, filters))
-      : ranked;
+  const rankedFiltered = ranked;
 
   if (process.env.NODE_ENV === 'development' && rankedFiltered.length > 0) {
     const first = rankedFiltered[0]!.movie;

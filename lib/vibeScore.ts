@@ -3,6 +3,8 @@
  * Uses `VIBE_EXTREME_MAP` only for keyword lists.
  */
 import type { FilterState, Genre, Movie } from './types';
+import { GENRE_NAME_TO_ID } from './tmdb';
+import { GENRE_CONFLICT_MAP } from './genreConflictMap';
 
 export const VIBE_EXTREME_MAP = {
   pacing: {
@@ -304,12 +306,17 @@ export function distanceFromCenter(sliderValue: number): number {
 const HIGH_INTENT_THRESHOLD = 70;
 const LOW_INTENT_THRESHOLD = 30;
 
-/** “Nuke”: no high-list keywords when user wants high, or any high-list when user wants low. */
-const NUKE_PENALTY = 80;
+/** Softer penalty when the user wants “high” on an axis but TMDB has no matching vibe keywords (rank down, don’t erase). */
+const MISSING_HIGH_VIBE_KEYWORD_PENALTY = 38;
+
+/** Extreme intent: slider 100 with zero high-list hits is a strong mismatch. */
+const MISSING_HIGH_VIBE_KEYWORD_PENALTY_SLIDER_100 = 60;
 
 /** Fine-tuning after penalties — scaled by intensity × hit counts. */
 const BONUS_PER_HIGH_HIT = 22;
 const BONUS_PER_LOW_HIT = 18;
+const SOFT_CONFLICT_START = 80;
+const SOFT_CONFLICT_PENALTY_PER_HIT = 22;
 
 export const ROMANCE_SUBPLOT_KEYWORDS = [
   'love interest',
@@ -325,6 +332,11 @@ function normPhrase(s: string): string {
 
 function namesNormalized(movie: Movie): string[] {
   return (movie.keywordNames ?? []).map((n) => normPhrase(n));
+}
+
+function genreIdsForMovie(movie: Movie): number[] {
+  if (movie.genreIds != null && movie.genreIds.length > 0) return movie.genreIds;
+  return movie.genre.map((g) => GENRE_NAME_TO_ID[g]).filter((id): id is number => id != null);
 }
 
 /** Normalized TMDB keyword names for matching / audits. */
@@ -363,14 +375,9 @@ export function getPrimaryGenre(movie: Movie): Genre | undefined {
 const ENERGY_AXIS_KEYS = ['pacing', 'cryMeter', 'humor', 'romance', 'suspense'] as const;
 
 /**
- * Hard floor (post–Smart Harvest): any axis at **100** requires ≥1 `VIBE_EXTREME_MAP` high-list keyword on the movie.
+ * @deprecated Always **true** — we no longer remove movies for missing vibe keywords; scoring handles rank only.
  */
-export function moviePassesMaxEnergySlidersVibeGate(movie: Movie, filters: FilterState): boolean {
-  const kw = namesNormalized(movie);
-  for (const axis of ENERGY_AXIS_KEYS) {
-    if (filters[axis] !== 100) continue;
-    if (countExtremeKeywordHits(kw, VIBE_EXTREME_MAP[axis].high) === 0) return false;
-  }
+export function moviePassesMaxEnergySlidersVibeGate(_movie: Movie, _filters: FilterState): boolean {
   return true;
 }
 
@@ -451,11 +458,28 @@ export function calculateEnergyScore(movie: Movie, filters: FilterState): Energy
     let metadataBonus = 0;
 
     if (highIntent) {
-      if (highHits === 0) metadataPenalty -= NUKE_PENALTY;
-      else metadataBonus += intensity * BONUS_PER_HIGH_HIT * highHits;
+      if (highHits === 0) {
+        const miss =
+          sliderVal === 100 ? MISSING_HIGH_VIBE_KEYWORD_PENALTY_SLIDER_100 : MISSING_HIGH_VIBE_KEYWORD_PENALTY;
+        metadataPenalty -= miss;
+      } else metadataBonus += intensity * BONUS_PER_HIGH_HIT * highHits;
     } else if (lowIntent) {
-      if (highHits > 0) metadataPenalty -= NUKE_PENALTY;
+      /** User wants a “low” vibe but high-list keywords intrude — rank down, same spirit as missing-keyword miss. */
+      if (highHits > 0) metadataPenalty -= MISSING_HIGH_VIBE_KEYWORD_PENALTY;
       else metadataBonus += intensity * BONUS_PER_LOW_HIT * lowHits;
+    }
+
+    /**
+     * 80–99 "soft sink": conflicting primary genres are penalized but not removed.
+     * At 100, Discover already applies conflict-map exclusion (except user-selected "User Wins" genres).
+     */
+    if (sliderVal >= SOFT_CONFLICT_START && sliderVal < 100) {
+      const conflictGenreIds = GENRE_CONFLICT_MAP[key];
+      const movieGenreIds = genreIdsForMovie(movie);
+      const conflictHits = conflictGenreIds.filter((id) => movieGenreIds.includes(id)).length;
+      if (conflictHits > 0) {
+        metadataPenalty -= SOFT_CONFLICT_PENALTY_PER_HIT * conflictHits;
+      }
     }
 
     let anchorBonus = 0;

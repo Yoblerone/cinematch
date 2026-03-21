@@ -1,8 +1,25 @@
 /**
- * Maps `VIBE_EXTREME_MAP` phrases → TMDB **keyword** IDs for Discover `with_keywords` / `without_keywords`.
+ * Maps `VIBE_EXTREME_MAP` phrases → TMDB **keyword** IDs (reference / tooling).
+ * Discover no longer filters by these — vibe scoring uses enriched `Movie.keywordNames` in `vibeScore`.
  * Keys: lowercase, hyphens → spaces. Several phrases map to the same canonical TMDB keyword.
- * Unmapped phrases rely on `smartHarvest` genre augmentation (`lib/smartHarvest.ts`).
  */
+
+/** Legacy bundle of TMDB keyword (and some genre) IDs — kept for reference; not sent to Discover. */
+export const VIBE_HIGH_VOLUME_KEYWORD_IDS: Readonly<
+  Record<'pacing' | 'cryMeter' | 'humor' | 'romance' | 'suspense', readonly number[]>
+> = {
+  /** Action/Adventure + momentum keywords (genre IDs included per Romance pattern). */
+  pacing: [28, 12, 3713, 9748, 5237, 9955],
+  /** Drama + grief/tragedy/death hooks. */
+  cryMeter: [18, 10065, 10614, 14964, 9672, 10683, 9840, 10631, 10543, 2343, 9717],
+  /** Comedy + joke-adjacent keywords. */
+  humor: [35, 9799, 9715],
+  /** Romance cluster (10749 = Romance genre — often deepens Discover matches when passed in with_keywords). */
+  romance: [10749, 9840, 9672, 12872, 10683, 14534, 161324, 13027, 5716],
+  /** Thriller / mystery / crime / horror + twist-noir staples. */
+  suspense: [53, 9648, 27, 80, 185014, 801, 9748],
+};
+
 export const VIBE_EXTREME_PHRASE_TO_TMDB_KEYWORD_ID: Readonly<Record<string, number>> = {
   // —— Pacing high ——
   chase: 3713,
@@ -40,14 +57,14 @@ export const VIBE_EXTREME_PHRASE_TO_TMDB_KEYWORD_ID: Readonly<Record<string, num
   // —— Cry high ——
   tearjerker: 10065,
   'terminal illness': 14964,
-  tragedy: 10614,
+  tragedy: 2343,
   heartbreaking: 10614,
-  grief: 10065,
+  grief: 9840,
   'loss of loved one': 10065,
   sacrifice: 10614,
   'unrequited love': 9840,
-  melancholy: 10614,
-  sadness: 10614,
+  melancholy: 9717,
+  sadness: 10543,
   weeping: 10065,
   'emotional journey': 10614,
   bittersweet: 10614,
@@ -95,7 +112,7 @@ export const VIBE_EXTREME_PHRASE_TO_TMDB_KEYWORD_ID: Readonly<Record<string, num
   macabre: 801,
   fatalistic: 10614,
   // —— Romance high ——
-  'love interest': 5716,
+  'love interest': 12872,
   'star crossed lovers': 9840,
   soulmates: 9840,
   courtship: 9840,
@@ -105,14 +122,17 @@ export const VIBE_EXTREME_PHRASE_TO_TMDB_KEYWORD_ID: Readonly<Record<string, num
   wedding: 13027,
   infatuation: 9840,
   'forbidden love': 9840,
-  chemistry: 5716,
+  chemistry: 161324,
+  relationship: 14534,
   dating: 9840,
-  'falling in love': 9840,
+  'falling in love': 5716,
   proposal: 13027,
   'true love': 9840,
   sentimental: 9840,
   romance: 9840,
   love: 5716,
+  'based on novel': 9672,
+  'based on novel or book': 9672,
   // —— Romance low (no “war” keyword id — use `without_genres` War in smartHarvest) ——
   solitude: 13036,
   lonely: 10614,

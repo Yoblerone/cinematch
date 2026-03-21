@@ -24,8 +24,13 @@ export default function EnergySliderRow({ label, value, onChange }: EnergySlider
           type="range"
           min={0}
           max={100}
+          step={10}
           value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
+          onChange={(e) => {
+            const raw = Number(e.target.value);
+            const snapped = Math.round(raw / 10) * 10;
+            onChange(Math.max(0, Math.min(100, snapped)));
+          }}
           className="min-w-0 flex-1 w-full"
         />
         <span className="w-4 shrink-0 text-center text-lg font-semibold leading-none text-neon-gold" aria-hidden>

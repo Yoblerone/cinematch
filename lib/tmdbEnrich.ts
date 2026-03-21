@@ -7,7 +7,7 @@ import type { Movie, Genre, Theme, VisualStyle, Soundtrack, CriticsVsFans } from
 import type { FilterState } from './types';
 import type { TmdbMovieResult, TmdbDiscoverResponse } from './tmdb';
 import { GENRE_ID_TO_NAME, buildDiscoverSearchParams, type SmartHarvestQuerySlice } from './tmdb';
-import { buildSmartHarvestAugmentation } from './smartHarvest';
+import { anyEnergySliderAt100, buildSmartHarvestAugmentation } from './smartHarvest';
 import {
   getOscarWinnerIds,
   getOscarNomineeIds,
@@ -493,6 +493,7 @@ async function fetchDiscoverRaw(
   const debugUrl = url.replace(/api_key=[^&]+/, 'api_key=***');
   if (params.oscarFilter === 'winner' || process.env.NODE_ENV !== 'production') {
     console.log('[TMDB Discover]', debugUrl);
+    console.log('Final API URL:', debugUrl);
   }
   const res = await fetch(url);
   if (!res.ok) throw new Error(`TMDB Discover ${res.status}`);
@@ -507,6 +508,9 @@ async function fetchDiscoverRaw(
 
 /** If strict AND returns fewer than this many titles, retry with OR (pipe) for a wider pool. */
 const GENRE_FALLBACK_MIN_RESULTS = 10;
+
+/** Second pass without UI genres when pool is thin and a slider is at 100 (wider `with_genres` OR). */
+const SLIDER_100_GENRE_BACKUP_MIN_UNIQUE = 40;
 
 /** TMDB discover pages fetched in parallel (always 1–5, not a sliding window). */
 const DISCOVER_PAGE_NUMBERS = [1, 2, 3, 4, 5] as const;
@@ -627,7 +631,7 @@ async function fetchAndEnrichByIds(
   return result;
 }
 
-/** Live API: discover/movie with with_genres + with_keywords from user, then enrich and rank. */
+/** Live API: discover/movie with genres + runtime/decade; enrich → keyword-based vibe rank (no Discover keyword filter). */
 export async function getTmdbMatches(
   apiKey: string,
   filters: FilterState,
@@ -751,6 +755,13 @@ export async function getTmdbMatches(
     voteAverageLte: baseParams.voteAverageLte,
   };
 
+  /** Max-slider intent: surface popular titles that fit the vibe (overrides cast discover caps). */
+  if (anyEnergySliderAt100(filters)) {
+    discoverBase.sortBy = 'popularity.desc';
+    delete discoverBase.voteCountLte;
+    delete discoverBase.popularityLte;
+  }
+
   // --- (1) Deep Harvest: pages 1–5 in one Promise.all, dedupe by id → allMovies (~100) ---
   let allMovies: TmdbMovieResult[];
   if (filters.genre.length >= 2) {
@@ -762,6 +773,31 @@ export async function getTmdbMatches(
     }
   } else {
     allMovies = await harvestDiscoverUniqueMovies(apiKey, discoverBase, 'and');
+  }
+
+  /** Re-fetch without UI genres so `with_genres` is slider-only OR (wider pool when user AND-ed many genres). */
+  if (
+    allMovies.length < SLIDER_100_GENRE_BACKUP_MIN_UNIQUE &&
+    anyEnergySliderAt100(filters) &&
+    filters.genre.length > 0
+  ) {
+    const backupBase: DiscoverFetchParams = {
+      ...discoverBase,
+      genre: [],
+      sortBy: 'popularity.desc',
+    };
+    delete backupBase.voteCountLte;
+    delete backupBase.popularityLte;
+    const extraRows = await harvestDiscoverUniqueMovies(apiKey, backupBase, 'and');
+    allMovies = mergeDiscoverRowsById(allMovies, extraRows);
+    const pipe = discoverBase.smartHarvest?.withGenresSlider100Pipe;
+    console.log(
+      '[Cinematch] Slider-100 genre backup harvest: merged',
+      extraRows.length,
+      'rows (slider with_genres pipe:',
+      pipe ?? discoverBase.smartHarvest?.withGenresOr ?? 'keywords-only',
+      ')'
+    );
   }
 
   if (filters.cultClassic === true) {

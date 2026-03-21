@@ -147,6 +147,8 @@ export interface Movie {
   customRank?: number;
   /** 0–100 match % from server ranking (taste + prominence); highest = best match. */
   matchPercentage?: number;
+  /** Internal final rank score used for ordering before formatting to percentage. */
+  finalMatchScore?: number;
 }
 
 /** Max genres user can select (TMDB discover uses AND for multiple). */
