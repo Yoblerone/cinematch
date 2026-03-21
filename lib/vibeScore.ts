@@ -360,6 +360,20 @@ export function getPrimaryGenre(movie: Movie): Genre | undefined {
   return movie.genre[0];
 }
 
+const ENERGY_AXIS_KEYS = ['pacing', 'cryMeter', 'humor', 'romance', 'suspense'] as const;
+
+/**
+ * Hard floor (post–Smart Harvest): any axis at **100** requires ≥1 `VIBE_EXTREME_MAP` high-list keyword on the movie.
+ */
+export function moviePassesMaxEnergySlidersVibeGate(movie: Movie, filters: FilterState): boolean {
+  const kw = namesNormalized(movie);
+  for (const axis of ENERGY_AXIS_KEYS) {
+    if (filters[axis] !== 100) continue;
+    if (countExtremeKeywordHits(kw, VIBE_EXTREME_MAP[axis].high) === 0) return false;
+  }
+  return true;
+}
+
 export type EnergyAxisDetail = {
   axis: keyof typeof VIBE_EXTREME_MAP;
   sliderVal: number;

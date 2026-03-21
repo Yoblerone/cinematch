@@ -11,6 +11,7 @@ import {
   calculateScore,
   getNormalizedKeywordNames,
   listMatchedPhrases,
+  moviePassesMaxEnergySlidersVibeGate,
   VIBE_CONFLICT_MAP,
 } from './vibeScore';
 
@@ -199,6 +200,8 @@ export type FilterMoviesOptions = {
    * `any`: movie must match at least one selected genre — used after TMDB OR fallback so the pool isn’t empty.
    */
   genreFilterMode?: 'all' | 'any';
+  /** When true (Academy list mode), do not drop rows that fail max-slider vibe gate — scoring only. */
+  skipMaxSliderVibeTrim?: boolean;
 };
 
 export function filterMovies(
@@ -207,6 +210,7 @@ export function filterMovies(
   options?: FilterMoviesOptions
 ): Movie[] {
   const genreFilterMode = options?.genreFilterMode ?? 'all';
+  const skipMaxSliderVibeTrim = options?.skipMaxSliderVibeTrim === true;
   const filtered = movieList.filter((movie) => {
     if (filters.crowd != null && !movie.crowd.includes(filters.crowd)) return false;
     if (filters.genre.length > 0) {
@@ -272,8 +276,19 @@ export function filterMovies(
     return (b.movie.voteCount ?? 0) - (a.movie.voteCount ?? 0);
   });
 
-  if (process.env.NODE_ENV === 'development' && ranked.length > 0) {
-    const first = ranked[0]!.movie;
+  const anySliderAt100 =
+    filters.pacing === 100 ||
+    filters.cryMeter === 100 ||
+    filters.humor === 100 ||
+    filters.romance === 100 ||
+    filters.suspense === 100;
+  const rankedFiltered =
+    anySliderAt100 && !skipMaxSliderVibeTrim
+      ? ranked.filter((x) => moviePassesMaxEnergySlidersVibeGate(x.movie, filters))
+      : ranked;
+
+  if (process.env.NODE_ENV === 'development' && rankedFiltered.length > 0) {
+    const first = rankedFiltered[0]!.movie;
     const kw = first.keywordNames ?? [];
     console.log(`[Cinematch] #1 result keywords (${first.title})`, {
       count: kw.length,
@@ -284,7 +299,7 @@ export function filterMovies(
           : undefined,
     });
 
-    const top5 = ranked.slice(0, 5);
+    const top5 = rankedFiltered.slice(0, 5);
     const payload = top5.map(({ movie: m }, idx) => {
       const gi = filtered.indexOf(m);
       const g = gi >= 0 ? scoreGenreForMatch(m, filters) : 0;
@@ -323,7 +338,7 @@ export function filterMovies(
         });
       }
 
-      const dunkirkEntry = ranked.find((r) => r.movie.title.toLowerCase().includes('dunkirk'));
+      const dunkirkEntry = rankedFiltered.find((r) => r.movie.title.toLowerCase().includes('dunkirk'));
       if (dunkirkEntry) {
         const m = dunkirkEntry.movie;
         const kn = getNormalizedKeywordNames(m);
@@ -331,7 +346,7 @@ export function filterMovies(
         const energy = calculateEnergyScore(m, filters);
         const romAxis = energy.axes.find((a) => a.axis === 'romance');
         console.warn('[Cinematch] Dunkirk still in ranked list (Romance>85) — conflict audit', {
-          rankApprox: ranked.indexOf(dunkirkEntry) + 1,
+          rankApprox: rankedFiltered.indexOf(dunkirkEntry) + 1,
           title: m.title,
           keywords: m.keywordNames ?? [],
           matchedRomanceAntagonists: matchedAnt,
@@ -345,5 +360,5 @@ export function filterMovies(
     }
   }
 
-  return ranked.map((x) => x.movie);
+  return rankedFiltered.map((x) => x.movie);
 }

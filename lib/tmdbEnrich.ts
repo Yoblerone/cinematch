@@ -6,7 +6,8 @@
 import type { Movie, Genre, Theme, VisualStyle, Soundtrack, CriticsVsFans } from './types';
 import type { FilterState } from './types';
 import type { TmdbMovieResult, TmdbDiscoverResponse } from './tmdb';
-import { GENRE_ID_TO_NAME, buildDiscoverSearchParams } from './tmdb';
+import { GENRE_ID_TO_NAME, buildDiscoverSearchParams, type SmartHarvestQuerySlice } from './tmdb';
+import { buildSmartHarvestAugmentation } from './smartHarvest';
 import {
   getOscarWinnerIds,
   getOscarNomineeIds,
@@ -450,6 +451,8 @@ type DiscoverFetchParams = {
   visualStyle: FilterState['visualStyle'];
   soundtrack: FilterState['soundtrack'];
   oscarFilter: FilterState['oscarFilter'];
+  /** Energy sliders → Discover keyword / genre augmentation (non–Academy paths only). */
+  smartHarvest?: SmartHarvestQuerySlice;
   sortBy?:
     | 'vote_count.desc'
     | 'vote_average.desc'
@@ -484,6 +487,7 @@ async function fetchDiscoverRaw(
     popularityLte: params.popularityLte,
     voteAverageGte: params.voteAverageGte,
     voteAverageLte: params.voteAverageLte,
+    smartHarvest: params.smartHarvest,
   });
   const url = `${TMDB_BASE}/discover/movie?${new URLSearchParams({ ...q, api_key: apiKey }).toString()}`;
   const debugUrl = url.replace(/api_key=[^&]+/, 'api_key=***');
@@ -503,9 +507,6 @@ async function fetchDiscoverRaw(
 
 /** If strict AND returns fewer than this many titles, retry with OR (pipe) for a wider pool. */
 const GENRE_FALLBACK_MIN_RESULTS = 10;
-
-/** Legacy cap for Oscar ID-list mode when secondary filters are active (discover returns full ranked pool). */
-const OSCAR_MATCH_SLICE = 20;
 
 /** TMDB discover pages fetched in parallel (always 1–5, not a sliding window). */
 const DISCOVER_PAGE_NUMBERS = [1, 2, 3, 4, 5] as const;
@@ -612,9 +613,9 @@ async function fetchAndEnrichByIds(
     enriched.push(...movies);
   }
   const filtered = enriched.filter((m) => allowed(tmdbIdFromMovieId(m.id)));
-  const result = filterMovies(filtered, filters);
+  const result = filterMovies(filtered, filters, { skipMaxSliderVibeTrim: true });
   // "List of record" mode: if Oscar filter is the only active preference, keep strict year order.
-  // Otherwise keep score-based order so sliders/filters (e.g. romance) drive ranking.
+  // Otherwise keep full score-based order (1927–present VIP list; sliders sort locally, no pool cap).
   if (!hasSecondaryFilters(filters)) {
     result.sort((a, b) => {
       const yearDiff = (b.year ?? 0) - (a.year ?? 0);
@@ -623,8 +624,7 @@ async function fetchAndEnrichByIds(
     });
     return result;
   }
-  /* Microcosm: same prominence scoring as discover — top matches only (e.g. nominee + Director 0 = obscure). */
-  return result.slice(0, OSCAR_MATCH_SLICE);
+  return result;
 }
 
 /** Live API: discover/movie with with_genres + with_keywords from user, then enrich and rank. */
@@ -729,6 +729,11 @@ export async function getTmdbMatches(
   let genreJoinMode: 'and' | 'or' = 'and';
   const filterMoviesOpts: FilterMoviesOptions = {};
 
+  const smartHarvest = buildSmartHarvestAugmentation(filters);
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[Cinematch] Smart Harvest', smartHarvest);
+  }
+
   const discoverBase: DiscoverFetchParams = {
     genre: baseParams.genre,
     decade: baseParams.decade,
@@ -737,6 +742,7 @@ export async function getTmdbMatches(
     visualStyle: baseParams.visualStyle,
     soundtrack: baseParams.soundtrack,
     oscarFilter: baseParams.oscarFilter,
+    smartHarvest,
     sortBy: baseParams.sortBy,
     voteCountGte: baseParams.voteCountGte,
     voteCountLte: baseParams.voteCountLte,

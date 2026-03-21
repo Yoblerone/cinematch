@@ -31,6 +31,16 @@ export const GENRE_NAME_TO_ID: Record<Genre, number> = Object.fromEntries(
   (Object.entries(GENRE_ID_TO_NAME) as [string, Genre][]).map(([id, name]) => [name, Number(id)])
 ) as Record<Genre, number>;
 
+/** Smart Harvest (Energy sliders) — merged in `buildDiscoverSearchParams`. */
+export type SmartHarvestQuerySlice = {
+  withKeywordIds: number[];
+  withoutKeywordIds: number[];
+  /** Pipe-OR `with_genres` when user picked no genres. */
+  withGenresOr?: string;
+  /** Comma `without_genres`. */
+  withoutGenres?: string;
+};
+
 const DECADE_RANGES: Record<NonNullable<Decade>, { gte: string; lte: string }> = {
   '60s': { gte: '1960-01-01', lte: '1969-12-31' },
   '70s': { gte: '1970-01-01', lte: '1979-12-31' },
@@ -145,6 +155,8 @@ export interface TmdbDiscoverParams {
   voteAverageGte?: number;
   /** TMDB discover: maximum vote_average (0–10). */
   voteAverageLte?: number;
+  /** Energy sliders → `with_keywords` / `without_keywords` / genre OR (see `lib/smartHarvest.ts`). */
+  smartHarvest?: SmartHarvestQuerySlice;
 }
 
 export interface TmdbMovieResult {
@@ -173,6 +185,7 @@ export function buildDiscoverSearchParams(params: TmdbDiscoverParams): Record<st
     /** Comma = AND: movie must have every selected genre (e.g. Family + Animation, not Family OR Drama). */
     include_adult: 'false',
   };
+  const sh = params.smartHarvest;
   if (params.genre != null && params.genre.length > 0) {
     const ids = params.genre
       .map((g) => GENRE_NAME_TO_ID[g])
@@ -182,6 +195,8 @@ export function buildDiscoverSearchParams(params: TmdbDiscoverParams): Record<st
       const joiner = params.genreJoinMode === 'or' ? '|' : ',';
       q.with_genres = ids.join(joiner);
     }
+  } else if (sh?.withGenresOr) {
+    q.with_genres = sh.withGenresOr;
   }
   if (params.decade != null && params.decade.length > 0) {
     const valid = params.decade.filter((d): d is NonNullable<Decade> => d != null);
@@ -210,14 +225,21 @@ export function buildDiscoverSearchParams(params: TmdbDiscoverParams): Record<st
     .map((s) => SOUNDTRACK_TO_KEYWORD_ID[s])
     .filter((id): id is number => id != null);
   /* Best Picture: strict local list only — no with_keywords (234473/250481) to avoid technical winners. */
-  const allKeywordIds = Array.from(new Set([...themeIds, ...visualIds, ...soundtrackIds]));
+  let allKeywordIds = Array.from(new Set([...themeIds, ...visualIds, ...soundtrackIds]));
+  if (sh?.withKeywordIds?.length) {
+    allKeywordIds = Array.from(new Set([...allKeywordIds, ...sh.withKeywordIds]));
+  }
   if (allKeywordIds.length > 0) q.with_keywords = allKeywordIds.join('|');
+  if (sh?.withoutKeywordIds?.length) {
+    q.without_keywords = Array.from(new Set(sh.withoutKeywordIds)).join('|');
+  }
   if (params.page != null) q.page = String(params.page);
   if (params.voteCountGte != null) q['vote_count.gte'] = String(params.voteCountGte);
   if (params.voteCountLte != null) q['vote_count.lte'] = String(params.voteCountLte);
   if (params.popularityLte != null) q['popularity.lte'] = String(params.popularityLte);
   if (params.voteAverageGte != null) q['vote_average.gte'] = String(params.voteAverageGte);
   if (params.voteAverageLte != null) q['vote_average.lte'] = String(params.voteAverageLte);
+  if (sh?.withoutGenres) q.without_genres = sh.withoutGenres;
   return q;
 }
 

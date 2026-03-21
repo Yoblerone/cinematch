@@ -30,7 +30,8 @@ See **[DEPLOY.md](./DEPLOY.md)** for step-by-step instructions: push to GitHub, 
 ## Data & filtering
 
 - **`lib/mockData.ts`** — 20 movies with attributes aligned to every filter (crowd, pacing, intensity, cryMeter, visualStyle, soundtrack, isCultClassic, hasAListCast, criticsVsFans).
-- **`lib/filterMovies.ts`** — Filtering + ranking: genre base, then Energy slider keyword nukes/bonuses (`VIBE_EXTREME_MAP` in `lib/vibeScore.ts`), then critics/fans weight (TMDB keywords merged from `append_to_response` + `/movie/{id}/keywords`).
+- **`lib/filterMovies.ts`** — Filtering + ranking: genre base, main-plot conflict map, `VIBE_EXTREME_MAP` metadata, critics/fans; optional trim when any Energy slider is **100** and TMDB keywords show no match (skipped for Academy list mode).
+- **`lib/smartHarvest.ts`** / **`lib/tmdbVibeKeywordBridge.ts`** — Energy sliders **>80** / **<20** augment TMDB Discover (`with_keywords` \| OR, `without_keywords`, `without_genres`, optional `with_genres` OR when no user genres). **Academy (winner/nominee/both)** uses the VIP ID list only — no Smart Harvest on Discover; full pool sorted locally with `skipMaxSliderVibeTrim`.
 
 ## Tech stack
 
