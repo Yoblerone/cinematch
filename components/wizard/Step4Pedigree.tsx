@@ -3,6 +3,7 @@
 import { motion } from 'framer-motion';
 import { Award, ThumbsUp, Trophy } from 'lucide-react';
 import StepResetButton from './StepResetButton';
+import SteppedRangeTrack from './SteppedRangeTrack';
 import type { CriticsVsFans } from '@/lib/types';
 
 export type OscarFilterValue = 'any' | 'nominee' | 'winner' | 'both';
@@ -59,12 +60,16 @@ export default function Step4Pedigree({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-brass-light">
               <Award className="w-5 h-5 flex-shrink-0" />
-              <span className="font-medium text-sm">A-List Cast (Star Power)</span>
+              <span className="font-medium text-sm">Star Power</span>
               <label className="flex items-center gap-1.5 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={aListCastAny}
-                  onChange={(e) => onAListCastAny(e.target.checked)}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    onAListCastAny(checked);
+                    if (checked) onAListCast(50);
+                  }}
                   className="rounded border-brass/50 bg-cherry-900 accent-[#B8860B] focus:ring-brass focus:ring-offset-cherry-900"
                 />
                 <span className="text-xs text-cream whitespace-nowrap">Any</span>
@@ -72,14 +77,10 @@ export default function Step4Pedigree({
             </div>
             <span className="text-cream text-sm tabular-nums">{aListCastAny ? '—' : aListCast}</span>
           </div>
-          <input
-            type="range"
-            min={0}
-            max={100}
+          <SteppedRangeTrack
             value={aListCast}
-            onChange={(e) => onAListCast(Number(e.target.value))}
+            onChange={onAListCast}
             disabled={aListCastAny}
-            className={`w-full ${aListCastAny ? 'opacity-50 cursor-not-allowed' : ''}`}
           />
           <div className="flex justify-between text-xs text-cream">
             <span>Indie ensembles</span>
@@ -95,7 +96,11 @@ export default function Step4Pedigree({
                 <input
                   type="checkbox"
                   checked={directorProminenceAny}
-                  onChange={(e) => onDirectorProminenceAny(e.target.checked)}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    onDirectorProminenceAny(checked);
+                    if (checked) onDirectorProminence(50);
+                  }}
                   className="rounded border-brass/50 bg-cherry-900 accent-[#B8860B] focus:ring-brass focus:ring-offset-cherry-900"
                 />
                 <span className="text-xs text-cream whitespace-nowrap">Any</span>
@@ -103,14 +108,10 @@ export default function Step4Pedigree({
             </div>
             <span className="text-cream text-sm tabular-nums">{directorProminenceAny ? '—' : directorProminence}</span>
           </div>
-          <input
-            type="range"
-            min={0}
-            max={100}
+          <SteppedRangeTrack
             value={directorProminence}
-            onChange={(e) => onDirectorProminence(Number(e.target.value))}
+            onChange={onDirectorProminence}
             disabled={directorProminenceAny}
-            className={`w-full ${directorProminenceAny ? 'opacity-50 cursor-not-allowed' : ''}`}
           />
           <div className="flex justify-between text-xs text-cream">
             <span>Indie</span>
@@ -168,7 +169,7 @@ export default function Step4Pedigree({
                     : 'border-brass/50 text-cream hover:border-brass'
                 }`}
               >
-                {opt === 'any' ? 'Any' : opt === 'both' ? 'Both' : opt === 'critics' ? 'Critics' : 'Fans'}
+                {opt === 'any' ? 'Any' : opt === 'both' ? 'Top Rated' : opt === 'critics' ? 'Critics' : 'Fans'}
               </button>
             ))}
           </div>

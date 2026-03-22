@@ -157,6 +157,8 @@ export interface TmdbDiscoverParams {
   voteCountGte?: number;
   voteCountLte?: number;
   popularityLte?: number;
+  /** TMDB discover: minimum popularity (movie-level). */
+  popularityGte?: number;
   /** TMDB discover: minimum vote_average (0–10). */
   voteAverageGte?: number;
   /** TMDB discover: maximum vote_average (0–10). */
@@ -254,6 +256,7 @@ export function buildDiscoverSearchParams(params: TmdbDiscoverParams): Record<st
   if (params.page != null) q.page = String(params.page);
   if (params.voteCountLte != null) q['vote_count.lte'] = String(params.voteCountLte);
   if (params.popularityLte != null) q['popularity.lte'] = String(params.popularityLte);
+  if (params.popularityGte != null) q['popularity.gte'] = String(params.popularityGte);
   if (params.voteAverageGte != null) q['vote_average.gte'] = String(params.voteAverageGte);
   if (params.voteAverageLte != null) q['vote_average.lte'] = String(params.voteAverageLte);
   if (sh?.withoutGenres) q.without_genres = sh.withoutGenres;

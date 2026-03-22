@@ -13,7 +13,9 @@ const RedCarpetWizard = dynamic(() => import('@/components/RedCarpetWizard'), {
 export default function Home() {
   return (
     <ErrorBoundary>
-      <RedCarpetWizard />
+      <div className="flex h-screen max-h-screen min-h-0 flex-1 flex-col overflow-hidden">
+        <RedCarpetWizard />
+      </div>
     </ErrorBoundary>
   );
 }

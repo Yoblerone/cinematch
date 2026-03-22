@@ -84,6 +84,7 @@ export type Theme =
   | 'Surreal'
   | 'Melancholy';
 
+/** `both` is shown in the UI as **Top Rated** (combined rating + fan engagement). */
 export type CriticsVsFans = 'critics' | 'fans' | 'both';
 
 export type Decade = '60s' | '70s' | '80s' | '90s' | '2000s' | '2010s' | '2020s' | null;
@@ -118,7 +119,7 @@ export interface Movie {
   /** TMDB `vote_average` (0–10), same scale as TMDB website. */
   rating: number;
   hasAListCast: boolean;
-  /** Star power score for ranking: 0 (no A-List in top 5), 30 (1–2 A-List), 100 (3+ A-List). A-List = TMDB person popularity > 50. */
+  /** Prestige display score for top-billed cast at “icons” calibration (0–100); not raw TMDB popularity. */
   starPowerScore?: number;
   criticsVsFans: CriticsVsFans;
   oscarWinner: boolean;
@@ -128,7 +129,7 @@ export interface Movie {
   /** Best Picture award type for label (e.g. "Academy Award Winner 2024"). */
   academyAwardType?: 'Winner' | 'Nominee';
   runtimeMinutes: number;
-  /** 0–100; maps to TMDB person popularity (director) when using API */
+  /** Legacy UI field; enriched API path also stores a scaled director signal — prestige ranking uses `directorFilmographyCount` + truth list. */
   directorProminence: number;
   /** Raw TMDB director popularity (same scale as cast credits) — used for prominence scoring. */
   directorPopularityRaw?: number;
@@ -142,6 +143,10 @@ export interface Movie {
   trailerKey?: string | null;
   /** Lightweight credits for prominence ranking (top cast + director). IDs = TMDB person id. */
   castCredits?: { id: number; name: string; popularity: number; order?: number }[];
+  /** Parallel to top-billed `castCredits` (same order): unique TMDB movie credits count per person (filmography breadth). */
+  castLeadFilmographyCounts?: number[];
+  /** Unique film credits for director (from `/person/{id}/movie_credits`). */
+  directorFilmographyCount?: number;
   crewCredits?: { id: number; name: string; job: string; popularity: number }[];
   /** Composite ranking signal from prominence utility. */
   customRank?: number;

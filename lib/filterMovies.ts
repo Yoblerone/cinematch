@@ -1,7 +1,6 @@
 import type { Movie, FilterState } from './types';
 import {
-  bayesianWeightedRating,
-  BAYESIAN_PRIOR_WEIGHT_M,
+  combinedTopRatedMatchScore,
   criticsFansMultiplier,
 } from './criticsFansRank';
 import { GENRE_NAME_TO_ID } from './tmdb';
@@ -25,7 +24,7 @@ const CULT_VOTE_COUNT_MAX = 15000;
 const CULT_RATING_MIN = 7.0;
 const CULT_AGE_YEARS = 10;
 
-/** Prominence score for ranking: higher popularity and vote_count = more prominent (blockbusters). */
+/** Legacy blockbusters-style signal (popularity + votes); ranking uses `calculateCustomRank` for cast/director. */
 export function prominenceScore(movie: Movie): number {
   const pop = movie.popularity ?? 0;
   const votes = movie.voteCount ?? 0;
@@ -155,8 +154,6 @@ export function scoreMovieTasteNonVibe(movie: Movie, filters: FilterState): numb
   }
   if (filters.decade.length > 0 && decadeMatch(movie.year, filters.decade)) score += 1;
   if (filters.runtime != null && runtimeMatch(movie.runtimeMinutes, filters.runtime)) score += 1;
-  if (!filters.directorProminenceAny && filters.directorProminence > 0 && movie.directorProminence >= filters.directorProminence) score += 4;
-  if (!filters.aListCastAny && (movie.starPowerScore ?? 0) > 0) score += 2;
   if (filters.cultClassic === true && hasCultSignature(movie)) {
     const pop = (movie.popularity ?? 0) + 1;
     const boxOffice = movie.boxOffice + 1;
@@ -180,7 +177,7 @@ function scoreGenreForMatch(movie: Movie, filters: FilterState): number {
 function scoreCriticsFansForMatch(movie: Movie, filters: FilterState): number {
   if (filters.criticsVsFans == null) return 50;
   if (filters.criticsVsFans === 'both') {
-    return bayesianWeightedRating(movie.rating ?? 0, movie.voteCount ?? 0, BAYESIAN_PRIOR_WEIGHT_M) * 10;
+    return combinedTopRatedMatchScore(movie);
   }
   return criticsFansMultiplier(movie, filters) * 40;
 }
@@ -251,6 +248,10 @@ export function filterMovies(
     return penalties + bonuses;
   });
 
+  const customRaws = filtered.map((m) => calculateCustomRank(m, filters, PROMINENCE_TRUTH_LIST));
+  const prominenceWeight =
+    !filters.aListCastAny || !filters.directorProminenceAny ? 0.26 : 0;
+
   const popQualityRaws = filtered.map((m, i) => {
     const g = genreRaws[i]!;
     const c = cfRaws[i]!;
@@ -268,18 +269,21 @@ export function filterMovies(
 
   const vibe01 = norm01(vibeRaws);
   const popQuality01 = norm01(popQualityRaws);
-  const preScores = filtered.map((_, i) =>
-    anySliderAt100
+  const custom01 = norm01(customRaws);
+  const preScores = filtered.map((_, i) => {
+    const base = anySliderAt100
       ? EXTREME_VIBE_WEIGHT * vibe01[i]! + EXTREME_POP_QUALITY_WEIGHT * popQuality01[i]!
-      : vibe01[i]! + popQuality01[i]!
-  );
+      : vibe01[i]! + popQuality01[i]!;
+    if (prominenceWeight <= 0) return base;
+    return (1 - prominenceWeight) * base + prominenceWeight * custom01[i]!;
+  });
 
   const minP = preScores.length ? Math.min(...preScores) : 0;
   const maxP = preScores.length ? Math.max(...preScores) : 1;
   const spanP = maxP - minP;
 
   const ranked = filtered.map((m, i) => {
-    const customRank = calculateCustomRank(m, filters, PROMINENCE_TRUTH_LIST);
+    const customRank = customRaws[i]!;
     m.customRank = customRank;
     const blend01 =
       spanP <= 1e-12 ? 0.5 : (preScores[i]! - minP) / spanP;

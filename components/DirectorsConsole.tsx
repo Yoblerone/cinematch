@@ -7,6 +7,7 @@ import type { FilterState, VisualStyle, Soundtrack, Genre, Theme, CriticsVsFans,
 import { MAX_GENRES } from '@/lib/types';
 import { ALL_VISUAL_STYLE_OPTIONS, ALL_SOUNDTRACK_OPTIONS, ALL_THEME_OPTIONS, GENRE_OPTIONS } from '@/lib/optionSets';
 import EnergySliderRow from '@/components/wizard/EnergySliderRow';
+import SteppedRangeTrack from '@/components/wizard/SteppedRangeTrack';
 
 const SLIDER_CONFIG = [
   { key: 'pacing' as const, label: 'Pacing' },
@@ -88,6 +89,8 @@ interface DirectorsConsoleProps {
   onRefresh?: () => void;
   /** Reset all slate filters to default empty state. */
   onClearSelections?: () => void;
+  /** When true, float the FAB above the fixed results pagination bar. */
+  liftFabAbovePagination?: boolean;
 }
 
 function Section({
@@ -116,6 +119,7 @@ export default function DirectorsConsole({
   onOpenChange,
   onRefresh,
   onClearSelections,
+  liftFabAbovePagination = false,
 }: DirectorsConsoleProps) {
   const [open, setOpen] = useState(false);
   const [expandedGenre, setExpandedGenre] = useState(false);
@@ -147,7 +151,11 @@ export default function DirectorsConsole({
       <motion.button
         type="button"
         onClick={openModal}
-        className="fixed z-[45] rounded-3xl bg-brass p-[2px] shadow-brass hover:bg-brass/90 transition-all right-[max(1.5rem,env(safe-area-inset-right))] bottom-[max(1.5rem,env(safe-area-inset-bottom))]"
+        className={`fixed z-[45] rounded-3xl bg-brass p-[2px] shadow-brass hover:bg-brass/90 transition-all right-[max(1.5rem,env(safe-area-inset-right))] ${
+          liftFabAbovePagination
+            ? 'bottom-[calc(5.25rem+env(safe-area-inset-bottom))]'
+            : 'bottom-[max(1.5rem,env(safe-area-inset-bottom))]'
+        }`}
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}
         aria-label="Open Director's Slate"
@@ -211,7 +219,7 @@ export default function DirectorsConsole({
                       onClick={() => { onRefresh?.(); closeModal(); }}
                       className="h-9 min-w-[2.25rem] px-3 flex items-center justify-center rounded-sm border-2 border-brass/50 text-brass-light hover:border-brass hover:bg-brass/10 transition-all text-sm font-medium bg-cherry-950"
                     >
-                      Search
+                      Find Results
                     </button>
                   )}
                   <button
@@ -360,12 +368,15 @@ export default function DirectorsConsole({
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
-                        <span className="font-medium text-brass-light text-sm">A-List Cast (Star Power)</span>
+                        <span className="font-medium text-brass-light text-sm">Star Power</span>
                         <label className="flex items-center gap-1.5 cursor-pointer">
                           <input
                             type="checkbox"
                             checked={filters.aListCastAny}
-                            onChange={(e) => onUpdate({ aListCastAny: e.target.checked })}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              onUpdate(checked ? { aListCastAny: true, aListCast: 50 } : { aListCastAny: false });
+                            }}
                             className="rounded border-brass/50 bg-cherry-900 accent-[#B8860B] focus:ring-brass focus:ring-offset-cherry-900"
                           />
                           <span className="text-cream text-sm">Any</span>
@@ -373,14 +384,10 @@ export default function DirectorsConsole({
                       </div>
                       <span className="text-cream text-sm tabular-nums">{filters.aListCastAny ? '—' : filters.aListCast}</span>
                     </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
+                    <SteppedRangeTrack
                       value={filters.aListCast}
-                      onChange={(e) => onUpdate({ aListCast: Number(e.target.value) })}
+                      onChange={(v) => onUpdate({ aListCast: v })}
                       disabled={filters.aListCastAny}
-                      className={`w-full ${filters.aListCastAny ? 'opacity-50 cursor-not-allowed' : ''}`}
                     />
                     <div className="flex justify-between text-xs text-cream">
                       <span>Indie ensembles</span>
@@ -395,7 +402,14 @@ export default function DirectorsConsole({
                           <input
                             type="checkbox"
                             checked={filters.directorProminenceAny}
-                            onChange={(e) => onUpdate({ directorProminenceAny: e.target.checked })}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              onUpdate(
+                                checked
+                                  ? { directorProminenceAny: true, directorProminence: 50 }
+                                  : { directorProminenceAny: false }
+                              );
+                            }}
                             className="rounded border-brass/50 bg-cherry-900 accent-[#B8860B] focus:ring-brass focus:ring-offset-cherry-900"
                           />
                           <span className="text-cream text-sm">Any</span>
@@ -403,14 +417,10 @@ export default function DirectorsConsole({
                       </div>
                       <span className="text-cream text-sm tabular-nums">{filters.directorProminenceAny ? '—' : filters.directorProminence}</span>
                     </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
+                    <SteppedRangeTrack
                       value={filters.directorProminence}
-                      onChange={(e) => onUpdate({ directorProminence: Number(e.target.value) })}
+                      onChange={(v) => onUpdate({ directorProminence: v })}
                       disabled={filters.directorProminenceAny}
-                      className={`w-full ${filters.directorProminenceAny ? 'opacity-50 cursor-not-allowed' : ''}`}
                     />
                     <div className="flex justify-between text-xs text-cream">
                       <span>Indie</span>
@@ -452,7 +462,7 @@ export default function DirectorsConsole({
                               selected ? 'border-brass bg-brass/15 text-neon-gold shadow-[0_0_20px_rgba(184,134,11,0.4)]' : 'border-brass/50 text-cream hover:border-brass hover:text-brass-light'
                             }`}
                           >
-                            {opt === 'any' ? 'Any' : opt === 'both' ? 'Both' : opt === 'critics' ? 'Critics' : 'Fans'}
+                            {opt === 'any' ? 'Any' : opt === 'both' ? 'Top Rated' : opt === 'critics' ? 'Critics' : 'Fans'}
                           </button>
                         );
                       })}

@@ -18,6 +18,9 @@ import {
   getOscarAwardInfo,
 } from './data/oscar-truth';
 import { filterMovies, type FilterMoviesOptions } from './filterMovies';
+import { combinedTopRatedMatchScore } from './criticsFansRank';
+import { PROMINENCE_TRUTH_LIST } from './prominence';
+import { prestigeCastMatch, prestigeDirectorMatch } from './prestigeScore';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const CONCURRENCY = 6;
@@ -230,12 +233,6 @@ export interface TmdbCreditsResponse {
   cast: { id: number; name: string; popularity: number; order: number }[];
 }
 
-export interface TmdbPersonResponse {
-  id: number;
-  name: string;
-  popularity: number;
-}
-
 async function fetchTmdb<T>(apiKey: string, path: string): Promise<T> {
   const url = path.startsWith('http') ? path : `${TMDB_BASE}${path}${path.includes('?') ? '&' : '?'}api_key=${apiKey}`;
   const res = await fetch(url);
@@ -243,33 +240,34 @@ async function fetchTmdb<T>(apiKey: string, path: string): Promise<T> {
   return res.json();
 }
 
-/**
- * Scale TMDB person popularity (often 0.5–50 for directors) to our 0–100 director prominence.
- * Uses log2 so small differences among obscure directors don't dominate; multiplier 15
- * spreads "known" directors (pop ~5–20) into the 45–80 range so the prominence slider
- * meaningfully ranks results without needing blockbuster-level popularity.
- */
-function scalePopularity(pop: number): number {
-  if (pop <= 0) return 0;
-  return Math.min(100, Math.round(Math.log2(pop + 1) * 15));
-}
-
-const A_LIST_POPULARITY_THRESHOLD = 50;
-
-/** Star power from top 5 billed cast: A-List = popularity > 50. Returns 0, 30, or 100. */
-function starPowerScoreFromCast(cast: TmdbCreditsResponse['cast']): number {
-  if (!cast?.length) return 0;
-  const byOrder = [...cast].sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
-  const top5 = byOrder.slice(0, 5);
-  const aListCount = top5.filter((c) => (c.popularity ?? 0) > A_LIST_POPULARITY_THRESHOLD).length;
-  if (aListCount >= 3) return 100;
-  if (aListCount >= 1) return 30;
-  return 0;
-}
-
-/** Legacy: hasAListCast true when star power is 30 or 100 (1+ A-List in top 5). */
-function hasAListCast(cast: TmdbCreditsResponse['cast']): boolean {
-  return starPowerScoreFromCast(cast) >= 30;
+/** Unique TMDB movie ids in a person’s filmography (cast + crew combined credits). */
+async function fetchPersonFilmographyUniqueCount(
+  apiKey: string,
+  personId: number,
+  cache: Map<number, number>
+): Promise<number> {
+  if (personId <= 0) return 0;
+  const hit = cache.get(personId);
+  if (hit != null) return hit;
+  try {
+    const data = await fetchTmdb<{ cast?: { id: number }[]; crew?: { id: number }[] }>(
+      apiKey,
+      `/person/${personId}/movie_credits`
+    );
+    const ids = new Set<number>();
+    for (const c of data.cast ?? []) {
+      if (c.id != null) ids.add(c.id);
+    }
+    for (const c of data.crew ?? []) {
+      if (c.id != null) ids.add(c.id);
+    }
+    const n = ids.size;
+    cache.set(personId, n);
+    return n;
+  } catch {
+    cache.set(personId, 0);
+    return 0;
+  }
 }
 
 /** vote_average high + revenue not dominant → critics; high popularity → fans. */
@@ -307,14 +305,6 @@ export async function fetchMovieCredits(apiKey: string, movieId: number): Promis
   }
 }
 
-export async function fetchPerson(apiKey: string, personId: number): Promise<TmdbPersonResponse | null> {
-  try {
-    return await fetchTmdb<TmdbPersonResponse>(apiKey, `/person/${personId}`);
-  } catch {
-    return null;
-  }
-}
-
 function mergeKeywordNames(fromAppend: string[], fromEndpoint: string[]): string[] {
   const merged: string[] = [];
   const seen = new Set<string>();
@@ -329,7 +319,11 @@ function mergeKeywordNames(fromAppend: string[], fromEndpoint: string[]): string
   return merged;
 }
 
-export async function enrichMovie(apiKey: string, base: TmdbMovieResult): Promise<Movie> {
+export async function enrichMovie(
+  apiKey: string,
+  base: TmdbMovieResult,
+  opts?: { creditCountCache?: Map<number, number> }
+): Promise<Movie> {
   const [details, credits, keywordsEndpoint] = await Promise.all([
     fetchMovieDetails(apiKey, base.id),
     fetchMovieCredits(apiKey, base.id),
@@ -359,19 +353,55 @@ export async function enrichMovie(apiKey: string, base: TmdbMovieResult): Promis
 
   const sliders = deriveSliders(genreIds, keywordNames);
 
-  let directorProminence = 0;
-  let directorPopularityRaw = 0;
+  const creditCountCache = opts?.creditCountCache ?? new Map<number, number>();
+  const castSorted = [...(credits?.cast ?? [])].sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+  const top2Cast = castSorted.slice(0, 2);
+  const castLeadFilmographyCounts = await Promise.all(
+    top2Cast.map((c) => fetchPersonFilmographyUniqueCount(apiKey, c.id, creditCountCache))
+  );
+
   const director = credits?.crew?.find((c) => c.job === 'Director');
+  let directorFilmographyCount = 0;
+  let directorPopularityRaw = 0;
   if (director?.id) {
     directorPopularityRaw = director.popularity ?? 0;
-    const person = await fetchPerson(apiKey, director.id);
-    if (person?.popularity != null) {
-      directorPopularityRaw = person.popularity;
-      directorProminence = scalePopularity(person.popularity);
-    } else if (director.popularity != null) {
-      directorProminence = scalePopularity(director.popularity);
-    }
+    directorFilmographyCount = await fetchPersonFilmographyUniqueCount(apiKey, director.id, creditCountCache);
   }
+
+  const aListActorIds = new Set(PROMINENCE_TRUTH_LIST.a_list_actors.map((a) => a.id));
+  const hasAListCastFlag =
+    top2Cast.some((c) => aListActorIds.has(c.id)) || castLeadFilmographyCounts.some((n) => n >= 20);
+
+  const crewCreditsMapped = (credits?.crew ?? [])
+    .filter((c) => c.job === 'Director')
+    .map((c) => ({
+      id: c.id,
+      name: c.name,
+      job: c.job,
+      popularity: c.popularity ?? 0,
+    }));
+
+  const castCreditsMapped = castSorted.slice(0, 5).map((c) => ({
+    id: c.id,
+    name: c.name,
+    popularity: c.popularity ?? 0,
+    order: c.order,
+  }));
+
+  const prestigePartial = {
+    castCredits: castSorted.slice(0, 2).map((c) => ({
+      id: c.id,
+      name: c.name,
+      popularity: c.popularity ?? 0,
+      order: c.order,
+    })),
+    castLeadFilmographyCounts,
+    directorFilmographyCount,
+    crewCredits: crewCreditsMapped,
+  } as Movie;
+
+  const starPowerScoreRounded = Math.round(prestigeCastMatch(prestigePartial, 100, PROMINENCE_TRUTH_LIST));
+  const directorProminence = Math.round(prestigeDirectorMatch(prestigePartial, 100, PROMINENCE_TRUTH_LIST));
 
   const voteAverage = details?.vote_average ?? base.vote_average ?? 0;
   const voteCount = details?.vote_count ?? (base as unknown as { vote_count?: number }).vote_count ?? 0;
@@ -406,8 +436,8 @@ export async function enrichMovie(apiKey: string, base: TmdbMovieResult): Promis
     boxOffice: revenue,
     budget,
     rating: voteAverage,
-    hasAListCast: credits ? hasAListCast(credits.cast) : false,
-    starPowerScore: credits ? starPowerScoreFromCast(credits.cast) : 0,
+    hasAListCast: hasAListCastFlag,
+    starPowerScore: starPowerScoreRounded,
     criticsVsFans: criticsVsFans(voteAverage, voteCount),
     oscarWinner: isOscarWinnerId(base.id),
     oscarNominee: isOscarNomineeId(base.id) || isOscarWinnerId(base.id),
@@ -417,28 +447,15 @@ export async function enrichMovie(apiKey: string, base: TmdbMovieResult): Promis
     })(),
     runtimeMinutes: details?.runtime ?? 0,
     directorProminence,
+    castLeadFilmographyCounts: castLeadFilmographyCounts.length ? castLeadFilmographyCounts : undefined,
+    directorFilmographyCount: directorFilmographyCount > 0 ? directorFilmographyCount : undefined,
     directorPopularityRaw: directorPopularityRaw || undefined,
     popularity,
     voteCount,
     imdbId: details?.imdb_id ?? undefined,
     trailerKey: extractYoutubeTrailerKey(details?.videos) ?? null,
-    castCredits: [...(credits?.cast ?? [])]
-      .sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
-      .slice(0, 5)
-      .map((c) => ({
-        id: c.id,
-        name: c.name,
-        popularity: c.popularity ?? 0,
-        order: c.order,
-      })),
-    crewCredits: (credits?.crew ?? [])
-      .filter((c) => c.job === 'Director')
-      .map((c) => ({
-        id: c.id,
-        name: c.name,
-        job: c.job,
-        popularity: c.popularity ?? 0,
-      })),
+    castCredits: castCreditsMapped,
+    crewCredits: crewCreditsMapped,
   };
 }
 
@@ -461,6 +478,7 @@ type DiscoverFetchParams = {
   voteCountGte?: number;
   voteCountLte?: number;
   popularityLte?: number;
+  popularityGte?: number;
   voteAverageGte?: number;
   voteAverageLte?: number;
   genreJoinMode?: 'and' | 'or';
@@ -485,6 +503,7 @@ async function fetchDiscoverRaw(
     voteCountGte: params.voteCountGte,
     voteCountLte: params.voteCountLte,
     popularityLte: params.popularityLte,
+    popularityGte: params.popularityGte,
     voteAverageGte: params.voteAverageGte,
     voteAverageLte: params.voteAverageLte,
     smartHarvest: params.smartHarvest,
@@ -512,38 +531,63 @@ const GENRE_FALLBACK_MIN_RESULTS = 10;
 /** Second pass without UI genres when pool is thin and a slider is at 100 (wider `with_genres` OR). */
 const SLIDER_100_GENRE_BACKUP_MIN_UNIQUE = 40;
 
-/** TMDB discover pages fetched in parallel (always 1–5, not a sliding window). */
-const DISCOVER_PAGE_NUMBERS = [1, 2, 3, 4, 5] as const;
+/** Deep search: 5 parallel Discover calls (pages 1–5) → up to ~100 rows before dedupe cap. */
+const DEEP_SEARCH_PAGES = [1, 2, 3, 4, 5] as const;
+export const DEEP_POOL_MAX = 100;
 
 export type GetTmdbMatchesOptions = {
-  /**
-   * @deprecated Discover Deep Harvest always requests pages 1–5. Ignored for the discover pool.
-   */
+  /** @deprecated Deep search always uses pages 1–5; ignored. */
   discoverStartPage?: number;
 };
 
+function dedupeDiscoverRows(rows: TmdbMovieResult[]): TmdbMovieResult[] {
+  const byId = new Map<number, TmdbMovieResult>();
+  for (const movie of rows) {
+    byId.set(movie.id, movie);
+  }
+  return Array.from(byId.values());
+}
+
 /**
- * Hard 100: `Promise.all` pages 1–5 → `flatMap(results)` → dedupe by `movie.id`.
+ * **Deep API-side search:** 5 simultaneous `/discover/movie` calls (pages 1–5), dedupe, cap at {@link DEEP_POOL_MAX}.
  */
-async function harvestDiscoverUniqueMovies(
+async function harvestDiscoverDeepPages(
   apiKey: string,
   discoverBase: DiscoverFetchParams,
   genreJoinMode: 'and' | 'or'
 ): Promise<TmdbMovieResult[]> {
-  const pages = [...DISCOVER_PAGE_NUMBERS];
   const params = { ...discoverBase, genreJoinMode };
   const allPagesResults = await Promise.all(
-    pages.map((page) => fetchDiscoverRaw(apiKey, params, page))
+    DEEP_SEARCH_PAGES.map((page) => fetchDiscoverRaw(apiKey, params, page))
   );
-  const combinedMovies = allPagesResults.flatMap((data) => data.results ?? []);
-  console.log('Total Movies Loaded:', combinedMovies.length);
-  const byId = new Map<number, TmdbMovieResult>();
-  for (const movie of combinedMovies) {
-    byId.set(movie.id, movie);
-  }
-  const unique = Array.from(byId.values());
-  console.log('Total Movies Loaded (unique by id):', unique.length);
-  return unique;
+  const combined = allPagesResults.flatMap((data) => data.results ?? []);
+  const unique = dedupeDiscoverRows(combined);
+  const capped = unique.slice(0, DEEP_POOL_MAX);
+  console.log(
+    '[Discover] Deep search pages 1–5: raw rows',
+    combined.length,
+    'unique',
+    unique.length,
+    'capped',
+    capped.length
+  );
+  return capped;
+}
+
+/** Map Energy sliders (0–100) to a minimum TMDB `vote_average` floor (5.0–7.0). */
+function energySlidersToVoteAverageGte(filters: FilterState): number {
+  const keys = ['pacing', 'intensity', 'cryMeter', 'humor', 'romance', 'suspense'] as const;
+  let sum = 0;
+  for (const k of keys) sum += filters[k];
+  const avg = sum / keys.length;
+  return 5 + (avg / 100) * 2;
+}
+
+/** Apply Discover quality floor from energy sliders (merged with Star Power / Top Rated floors). */
+function applyEnergyVoteAverageFloor(discoverBase: DiscoverFetchParams, filters: FilterState): void {
+  if (anyEnergySliderAt100(filters)) return;
+  const floor = energySlidersToVoteAverageGte(filters);
+  discoverBase.voteAverageGte = Math.max(discoverBase.voteAverageGte ?? 0, floor);
 }
 
 function mergeDiscoverRowsById(a: TmdbMovieResult[], b: TmdbMovieResult[]): TmdbMovieResult[] {
@@ -558,6 +602,7 @@ function mergeDiscoverRowsById(a: TmdbMovieResult[], b: TmdbMovieResult[]): Tmdb
  */
 async function enrichDiscoverPool(apiKey: string, allMovies: TmdbMovieResult[]): Promise<Movie[]> {
   const cache = new Map<number, Movie>();
+  const creditCountCache = new Map<number, number>();
   const enriched: Movie[] = [];
   for (let i = 0; i < allMovies.length; i += CONCURRENCY) {
     const batch = allMovies.slice(i, i + CONCURRENCY);
@@ -565,7 +610,7 @@ async function enrichDiscoverPool(apiKey: string, allMovies: TmdbMovieResult[]):
       batch.map(async (base) => {
         const hit = cache.get(base.id);
         if (hit) return hit;
-        const movie = await enrichMovie(apiKey, base);
+        const movie = await enrichMovie(apiKey, base, { creditCountCache });
         cache.set(base.id, movie);
         return movie;
       })
@@ -603,10 +648,11 @@ async function fetchAndEnrichByIds(
 ): Promise<Movie[]> {
   const rawResults: TmdbMovieResult[] = ids.map((id) => stubResult(id));
   const cache = new Map<number, Movie>();
+  const creditCountCache = new Map<number, number>();
   const enrichOne = async (base: TmdbMovieResult): Promise<Movie> => {
     const cached = cache.get(base.id);
     if (cached) return cached;
-    const movie = await enrichMovie(apiKey, base);
+    const movie = await enrichMovie(apiKey, base, { creditCountCache });
     cache.set(base.id, movie);
     return movie;
   };
@@ -635,7 +681,7 @@ async function fetchAndEnrichByIds(
 export async function getTmdbMatches(
   apiKey: string,
   filters: FilterState,
-  /** @deprecated Discover pool always uses pages 1–5; `discoverStartPage` is ignored. */
+  /** @deprecated Full Grid rule handles pagination; ignored. */
   _options?: GetTmdbMatchesOptions
 ): Promise<Movie[]> {
   const oscarFilter = String(filters.oscarFilter ?? 'any').toLowerCase();
@@ -674,6 +720,7 @@ export async function getTmdbMatches(
     voteCountGte?: number;
     voteCountLte?: number;
     popularityLte?: number;
+    popularityGte?: number;
     voteAverageGte?: number;
     voteAverageLte?: number;
   } = {
@@ -687,46 +734,44 @@ export async function getTmdbMatches(
   };
 
   /**
-   * A-List Cast drives discover constraints (genre/theme/etc. still applied via buildDiscoverSearchParams).
-   * Director prominence is weighted after fetch in filterMovies / prominence scoring — not here, to avoid
-   * conflicting vote/popularity caps with the "no-names" pool.
+   * Star Power → TMDB `/discover/movie` (no client-side cast filtering for the pool).
+   * Low band: low popularity cap + minimum rating for hidden gems. High band: high minimum popularity for hits.
    */
   if (!filters.aListCastAny) {
     const c = filters.aListCast;
-    if (c < 10) {
-      baseParams.voteCountLte = 800;
-      baseParams.popularityLte = 30;
-      baseParams.sortBy = 'primary_release_date.desc';
-    } else if (c > 90) {
+    if (c <= 10) {
+      baseParams.popularityLte = 25;
+      baseParams.voteAverageGte = 7.0;
+      if (filters.criticsVsFans == null) baseParams.sortBy = 'vote_average.desc';
+    } else if (c >= 90) {
+      baseParams.popularityGte = 80;
+      if (filters.criticsVsFans == null) {
+        baseParams.sortBy = 'popularity.desc';
+        baseParams.voteCountGte = Math.max(baseParams.voteCountGte ?? 0, 500);
+      }
+    } else if (filters.criticsVsFans == null) {
       baseParams.sortBy = 'popularity.desc';
-      baseParams.voteCountGte = 2000;
-    } else if (c >= 50) {
-      baseParams.sortBy = 'popularity.desc';
-      if (baseParams.voteCountGte == null) baseParams.voteCountGte = 500;
+      baseParams.voteCountGte = Math.max(baseParams.voteCountGte ?? 0, 500);
     }
   }
 
   /**
-   * Critics vs Fans: map to TMDB discover sort + vote_count / vote_average.
-   * Overrides cast-slider discover sort when set so the fetched pool matches the filter intent.
+   * Critics vs Fans: sort + vote floors. **Top Rated** (`both`) always uses `vote_average.desc` and
+   * `vote_count.gte=500` so one-off 10★ votes don’t dominate.
    */
   if (filters.criticsVsFans != null) {
     if (filters.criticsVsFans === 'critics') {
       baseParams.sortBy = 'vote_average.desc';
       baseParams.voteCountGte = Math.max(baseParams.voteCountGte ?? 0, 500);
       delete baseParams.voteCountLte;
-      delete baseParams.popularityLte;
     } else if (filters.criticsVsFans === 'fans') {
       baseParams.sortBy = 'vote_count.desc';
       baseParams.voteCountGte = Math.max(baseParams.voteCountGte ?? 0, 500);
       delete baseParams.voteCountLte;
-      delete baseParams.popularityLte;
     } else if (filters.criticsVsFans === 'both') {
-      /** Ranking uses Bayesian weightedRating in-app — not TMDB vote_average order. */
-      baseParams.sortBy = 'vote_count.desc';
-      baseParams.voteCountGte = Math.max(baseParams.voteCountGte ?? 0, 50);
+      baseParams.sortBy = 'vote_average.desc';
+      baseParams.voteCountGte = Math.max(baseParams.voteCountGte ?? 0, 500);
       delete baseParams.voteCountLte;
-      delete baseParams.popularityLte;
     }
   }
 
@@ -751,28 +796,34 @@ export async function getTmdbMatches(
     voteCountGte: baseParams.voteCountGte,
     voteCountLte: baseParams.voteCountLte,
     popularityLte: baseParams.popularityLte,
+    popularityGte: baseParams.popularityGte,
     voteAverageGte: baseParams.voteAverageGte,
     voteAverageLte: baseParams.voteAverageLte,
   };
 
-  /** Max-slider intent: surface popular titles that fit the vibe (overrides cast discover caps). */
+  /** Max-slider intent: surface popular titles that fit the vibe (overrides Star Power discover caps). */
   if (anyEnergySliderAt100(filters)) {
     discoverBase.sortBy = 'popularity.desc';
     delete discoverBase.voteCountLte;
     delete discoverBase.popularityLte;
+    delete discoverBase.popularityGte;
+    delete discoverBase.voteAverageGte;
+  } else {
+    /** Pacing / energy sliders → `vote_average.gte` (refines Discover against the full DB). */
+    applyEnergyVoteAverageFloor(discoverBase, filters);
   }
 
-  // --- (1) Deep Harvest: pages 1–5 in one Promise.all, dedupe by id → allMovies (~100) ---
+  // --- (1) Deep search: 5 parallel Discover calls (pages 1–5) → ≤100 unique TMDB rows ---
   let allMovies: TmdbMovieResult[];
   if (filters.genre.length >= 2) {
-    allMovies = await harvestDiscoverUniqueMovies(apiKey, discoverBase, 'and');
+    allMovies = await harvestDiscoverDeepPages(apiKey, discoverBase, 'and');
     if (allMovies.length < GENRE_FALLBACK_MIN_RESULTS) {
       genreJoinMode = 'or';
       filterMoviesOpts.genreFilterMode = 'any';
-      allMovies = await harvestDiscoverUniqueMovies(apiKey, discoverBase, 'or');
+      allMovies = await harvestDiscoverDeepPages(apiKey, discoverBase, 'or');
     }
   } else {
-    allMovies = await harvestDiscoverUniqueMovies(apiKey, discoverBase, 'and');
+    allMovies = await harvestDiscoverDeepPages(apiKey, discoverBase, 'and');
   }
 
   /** Re-fetch without UI genres so `with_genres` is slider-only OR (wider pool when user AND-ed many genres). */
@@ -788,7 +839,9 @@ export async function getTmdbMatches(
     };
     delete backupBase.voteCountLte;
     delete backupBase.popularityLte;
-    const extraRows = await harvestDiscoverUniqueMovies(apiKey, backupBase, 'and');
+    delete backupBase.popularityGte;
+    delete backupBase.voteAverageGte;
+    const extraRows = await harvestDiscoverDeepPages(apiKey, backupBase, 'and');
     allMovies = mergeDiscoverRowsById(allMovies, extraRows);
     const pipe = discoverBase.smartHarvest?.withGenresSlider100Pipe;
     console.log(
@@ -801,7 +854,7 @@ export async function getTmdbMatches(
   }
 
   if (filters.cultClassic === true) {
-    const cultRows = await harvestDiscoverUniqueMovies(
+    const cultRows = await harvestDiscoverDeepPages(
       apiKey,
       { ...discoverBase, sortBy: 'vote_average.desc' },
       genreJoinMode
@@ -809,11 +862,22 @@ export async function getTmdbMatches(
     allMovies = mergeDiscoverRowsById(allMovies, cultRows);
   }
 
-  // --- (2) Metadata for entire pool: movie/{id}?append_to_response=keywords,videos + credits ---
+  allMovies = dedupeDiscoverRows(allMovies).slice(0, DEEP_POOL_MAX);
+
+  // --- (2) Enrich the capped pool only (≤100): movie/{id}?append_to_response=keywords,videos + credits ---
   const enrichedPool = await enrichDiscoverPool(apiKey, allMovies);
 
-  // --- (3) Score + sort full pool; return every ranked row to the client (UI maps all) ---
+  // --- (3) Taste/vibe filter + local **Top Rated** sort (critic + audience blend) → ≤100 for client cache ---
   const ranked = filterMovies(enrichedPool, filters, filterMoviesOpts);
-  console.log('Total Movies Returned (ranked pool):', ranked.length);
-  return ranked;
+  const topRatedSorted = [...ranked].sort(
+    (a, b) => combinedTopRatedMatchScore(b) - combinedTopRatedMatchScore(a)
+  );
+  const pool = topRatedSorted.slice(0, DEEP_POOL_MAX);
+  for (const m of pool) {
+    const tr = combinedTopRatedMatchScore(m);
+    m.matchPercentage = Math.round(tr);
+    m.finalMatchScore = tr;
+  }
+  console.log('Total Movies Returned (100-movie Top Rated pool):', pool.length);
+  return pool;
 }

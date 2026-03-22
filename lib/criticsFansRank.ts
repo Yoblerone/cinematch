@@ -22,10 +22,24 @@ export function bayesianWeightedRating(
 }
 
 /**
+ * UI label **Top Rated** (`criticsVsFans === 'both'`). TMDB has no separate critic vs audience scores;
+ * we blend **vote_average** (quality / “critic” proxy) with **log-scaled vote_count** (fan engagement proxy).
+ * Discover pools for **Star Power** / **Top Rated** are built server-side (`getTmdbMatches` → TMDB).
+ * Returns ~0–100 for match % normalization in `filterMovies`.
+ */
+export function combinedTopRatedMatchScore(movie: Movie): number {
+  const rating = Math.max(0, Math.min(10, movie.rating ?? 0));
+  const n = Math.max(0, movie.voteCount ?? 0);
+  const criticNorm = rating / 10;
+  const fanNorm = Math.min(1, Math.log10(1 + n) / Math.log10(1 + 20_000));
+  return ((criticNorm + fanNorm) / 2) * 100;
+}
+
+/**
  * Final multiplier on (prominence × 10000 + taste) so Critics / Fans
  * reorder results after genre + cast/director scoring.
  *
- * “Both” mode uses `bayesianWeightedRating` in `filterMovies` instead — this returns 1.
+ * “Top Rated” mode (`both`) uses `combinedTopRatedMatchScore` in `filterMovies` — this returns 1.
  *
  * Uses TMDB fields: `movie.rating` = vote_average (0–10), `movie.voteCount` = vote_count.
  */

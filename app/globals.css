@@ -12,16 +12,21 @@
   --neon-rose: #ff6b9d;
 }
 
+/**
+ * Lock the document: no viewport scroll. App shells (wizard / results) use inner overflow-y-auto.
+ * (Previously html { overflow-y: auto } caused the whole page—including headers—to scroll.)
+ */
 html {
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden;
+  height: 100%;
 }
 
 body {
   background: var(--cherry-950);
   color: #f5e6e8;
-  overflow-x: hidden;
+  overflow: hidden;
   min-height: 100dvh;
+  height: 100%;
 }
 
 /* Safe area for modals and FAB on notched devices (e.g. iPhone) */
@@ -248,6 +253,28 @@ input[type="range"]::-moz-range-thumb {
 .scroll-area-slate {
   scrollbar-width: thin;
   scrollbar-color: var(--brass) var(--cherry-900);
+}
+
+/* Cinematch yellow scrollbar (results grid, shared scroll areas) */
+.custom-scrollbar {
+  scrollbar-gutter: stable;
+}
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #ffd700;
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #e6c200;
+}
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #ffd700 rgba(255, 255, 255, 0.05);
 }
 
 /* Aesthetic step: 2×3 carousel grid (6 tags at a time), Burgundy + Yellow */

@@ -9,6 +9,8 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        /** App shell background (matches cherry-950); use with bg-background */
+        background: '#1a0608',
         cherry: {
           950: '#1a0608',
           900: '#2d0a0f',

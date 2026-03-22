@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight, Sparkles, Home, Dices } from 'lucide-react';
 import type { FilterState, Movie } from '@/lib/types';
@@ -31,6 +31,10 @@ export default function RedCarpetWizard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rollingDice, setRollingDice] = useState(false);
+
+  /** Latest filters for fetch (avoids stale closures in debounced refetch). */
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
 
   /** Restore results after refresh; always clear loading (fixes stuck spinner if fetch aborts / stringify fails / Strict Mode). */
   useEffect(() => {
@@ -153,8 +157,8 @@ export default function RedCarpetWizard() {
     setFilters((prev) => ({ ...prev, ...patch }));
   };
 
-  const runFetch = async (discoverStartPage?: number, filtersOverride?: FilterState) => {
-    const f = filtersOverride ?? filters;
+  const runFetch = useCallback(async (discoverStartPage?: number, filtersOverride?: FilterState) => {
+    const f = filtersOverride ?? filtersRef.current;
     try {
       const body: Record<string, unknown> = { ...f };
       if (discoverStartPage != null) body.discoverStartPage = discoverStartPage;
@@ -183,7 +187,7 @@ export default function RedCarpetWizard() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   const fetchResults = (discoverStartPage?: number) => {
     setLoading(true);
@@ -195,7 +199,7 @@ export default function RedCarpetWizard() {
     setLoading(true);
     setError(null);
     setShowResults(true);
-    setTimeout(() => runFetch(), 10);
+    setTimeout(() => runFetch(undefined, filtersRef.current), 10);
   };
 
   const handleSurpriseMe = () => {
@@ -214,35 +218,38 @@ export default function RedCarpetWizard() {
 
   if (showResults) {
     return (
-      <ResultsView
-        filters={filters}
-        onUpdateFilters={updateFilters}
-        onBackToWizard={() => {
-          try {
-            sessionStorage.setItem(SESSION_KEY, JSON.stringify({ wasOnResults: false }));
-          } catch {
-            // ignore
-          }
-          setShowResults(false);
-          setLoading(false);
-          setError(null);
-          setStep(1);
-        }}
-        results={results}
-        loading={loading}
-        error={error}
-        onRefresh={fetchResults}
-        onSurpriseMe={handleSurpriseMe}
-        rollingDice={rollingDice}
-      />
+      <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+        <ResultsView
+          filters={filters}
+          onUpdateFilters={updateFilters}
+          onBackToWizard={() => {
+            try {
+              sessionStorage.setItem(SESSION_KEY, JSON.stringify({ wasOnResults: false }));
+            } catch {
+              // ignore
+            }
+            setShowResults(false);
+            setLoading(false);
+            setError(null);
+            setStep(1);
+          }}
+          results={results}
+          loading={loading}
+          error={error}
+          onRefresh={fetchResults}
+          onSurpriseMe={handleSurpriseMe}
+          rollingDice={rollingDice}
+        />
+      </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-cherry-950 flex flex-col relative">
+    <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-cherry-950">
       <SparkleBackground currentStep={step} />
-      <div className="sticky top-0 left-0 right-0 z-20 bg-cherry-950">
-        <header className="border-b border-brass/40 py-3 px-4 sm:py-4 sm:px-6">
+      {/* Fixed header region: logo → progress bar → step counter (does not scroll with steps) */}
+      <div className="sticky top-0 z-[60] flex-shrink-0 bg-cherry-950 border-b border-brass/40 shadow-[0_4px_24px_rgba(0,0,0,0.35)]">
+        <header className="py-3 px-4 sm:py-4 sm:px-6">
           <div className="w-full grid grid-cols-[1fr_auto_1fr] items-center gap-4">
             <div className="flex justify-center min-w-0">
               {step > 1 && (
@@ -284,7 +291,7 @@ export default function RedCarpetWizard() {
           />
         </div>
 
-        <div className="px-4 sm:px-6 py-2 flex items-center justify-center gap-2 bg-cherry-950 border-b border-brass/40">
+        <div className="px-4 sm:px-6 py-2 flex items-center justify-center gap-2">
         <span className="text-antique text-sm">
           Step {step} of {STEPS}
         </span>
@@ -308,7 +315,7 @@ export default function RedCarpetWizard() {
       </div>
 
       <main className="flex-1 min-h-0 flex flex-col relative z-10">
-        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center px-4 py-4 sm:px-6 sm:py-6">
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar flex flex-col items-center px-4 py-4 sm:px-6 sm:py-6">
           <div className="w-full max-w-2xl">
             <AnimatePresence mode="wait">
             {step === 1 && (
@@ -435,7 +442,7 @@ export default function RedCarpetWizard() {
           </div>
         </div>
 
-        <div className="flex-shrink-0 sticky bottom-0 left-0 right-0 flex flex-col gap-2 pt-3 pb-5 sm:pb-6 px-4 sm:px-6 bg-cherry-950 border-t border-brass/40 z-20">
+        <div className="flex-shrink-0 flex flex-col gap-2 pt-3 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:pb-6 px-4 sm:px-6 bg-cherry-950 border-t border-brass/40 z-20 shadow-[0_-4px_24px_rgba(0,0,0,0.35)]">
           <div className="flex items-center justify-between w-full max-w-2xl mx-auto gap-3">
             <button
               type="button"
@@ -463,7 +470,7 @@ export default function RedCarpetWizard() {
               className="flex items-center gap-2 min-h-[44px] px-6 py-3 rounded-lg border-2 border-brass bg-brass/30 text-neon-gold shadow-brass hover:bg-brass/40 transition-all font-semibold touch-manipulation"
             >
               <Sparkles className="w-5 h-5" />
-              Find My Match
+              Find Results
             </button>
           )}
           </div>
