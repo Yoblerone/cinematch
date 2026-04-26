@@ -277,6 +277,67 @@ input[type="range"]::-moz-range-thumb {
   scrollbar-color: #ffd700 rgba(255, 255, 255, 0.05);
 }
 
+/* Projection-booth toggle: dark brass/chrome off, bright filament on. */
+.filament-switch {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 9999px;
+  border: 2px solid #3f3a33;
+  background: radial-gradient(circle at 35% 35%, #2c2a28 0%, #161515 72%);
+  transition: all 180ms ease;
+}
+
+.filament-switch:focus-visible {
+  outline: 2px solid #b8860b;
+  outline-offset: 2px;
+}
+
+.filament-switch--off {
+  border-color: rgba(184, 134, 11, 0.5);
+  background: transparent;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.2),
+    0 0 0 1px rgba(184, 134, 11, 0.15);
+}
+
+.filament-switch--on {
+  border-color: #ffd700;
+  background: radial-gradient(circle at 38% 34%, #fff3a0 0%, #ffd700 46%, #d6a700 100%);
+  filter: blur(0.2px);
+  box-shadow:
+    0 0 6px rgba(255, 215, 0, 0.85),
+    0 0 16px rgba(255, 215, 0, 0.55),
+    0 0 28px rgba(255, 215, 0, 0.3);
+  animation: filament-flicker 0.28s ease-out;
+}
+
+.filament-label-on {
+  text-shadow: 0 0 8px #ffd700;
+  animation: filament-flicker 0.28s ease-out;
+}
+
+.filament-label-off {
+  color: #8b7355;
+}
+
+.stage-light-on {
+  opacity: 1;
+}
+
+.stage-control-off {
+  opacity: 0.2;
+  filter: grayscale(1);
+}
+
+@keyframes filament-flicker {
+  0% { opacity: 0.35; }
+  30% { opacity: 1; }
+  52% { opacity: 0.72; }
+  72% { opacity: 1; }
+  86% { opacity: 0.78; }
+  100% { opacity: 1; }
+}
+
 /* Aesthetic step: 2×3 carousel grid (6 tags at a time), Burgundy + Yellow */
 .aesthetic-chip-grid {
   display: grid;

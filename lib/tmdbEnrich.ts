@@ -6,8 +6,15 @@
 import type { Movie, Genre, Theme, VisualStyle, Soundtrack, CriticsVsFans } from './types';
 import type { FilterState } from './types';
 import type { TmdbMovieResult, TmdbDiscoverResponse } from './tmdb';
-import { GENRE_ID_TO_NAME, buildDiscoverSearchParams, type SmartHarvestQuerySlice } from './tmdb';
-import { anyEnergySliderAt100, buildSmartHarvestAugmentation } from './smartHarvest';
+import { GENRE_ID_TO_NAME, GENRE_NAME_TO_ID, buildDiscoverSearchParams, type SmartHarvestQuerySlice } from './tmdb';
+import { ENERGY_MANIFEST, type EnergyManifestAxis } from './scoring/energyManifest';
+import { scoreMovieDeclarative } from './scoring/thematicEngine';
+import {
+  FILTER_WEIGHT_HIGH,
+  FILTER_WEIGHT_LOW,
+  nearestFilterWeightStop,
+} from './filterWeightSegments';
+import { anyEmotionSliderAbove70, emptySmartHarvestSlice } from './smartHarvest';
 import {
   getOscarWinnerIds,
   getOscarNomineeIds,
@@ -17,7 +24,8 @@ import {
   isOscarListedId,
   getOscarAwardInfo,
 } from './data/oscar-truth';
-import { filterMovies, type FilterMoviesOptions } from './filterMovies';
+import { filterMovies } from './filterMovies';
+import { claudeRerank } from './claudeRerank';
 import { combinedTopRatedMatchScore } from './criticsFansRank';
 import { PROMINENCE_TRUTH_LIST } from './prominence';
 import { prestigeCastMatch, prestigeDirectorMatch } from './prestigeScore';
@@ -25,24 +33,110 @@ import { prestigeCastMatch, prestigeDirectorMatch } from './prestigeScore';
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const CONCURRENCY = 6;
 
+const ENGINE_AXES: EnergyManifestAxis[] = [
+  'narrative_pacing',
+  'emotional_tone',
+  'brain_power',
+  'visual_style',
+  'suspense_level',
+  'world_style',
+];
+
+const AXES = [
+  'narrative_pacing',
+  'emotional_tone',
+  'brain_power',
+  'visual_style',
+  'suspense_level',
+  'world_style',
+] as const;
+
+function activeSeedAxes(filters: FilterState): EnergyManifestAxis[] {
+  return ENGINE_AXES.filter((axis) => (filters[axis] ?? 50) > 70);
+}
+
+/**
+ * Extra TMDB keyword IDs per axis (curated “adjacent” signals) merged into `with_keywords`
+ * so high-intent discovers are stricter and less dominated by a single id.
+ */
+const VIBE_HIGH_RELATED_KEYWORD_IDS: Record<EnergyManifestAxis, readonly number[]> = {
+  narrative_pacing: [9748, 3713, 234505],
+  emotional_tone: [9840, 10065, 10614],
+  brain_power: [10683, 185014, 9672],
+  visual_style: [2590, 9683, 9807],
+  suspense_level: [185014, 12565, 9663],
+  world_style: [345821, 181182, 2791],
+};
+
+/** High-tier Discover keywords using comma for logical intersection (AND). */
+function buildSliderSeedKeywordCsv(filters: FilterState): string | undefined {
+  const ids = new Set<number>();
+  const axes = activeSeedAxes(filters);
+  for (const axis of axes) {
+    for (const id of ENERGY_MANIFEST[axis].high.tmdb_keyword_ids) ids.add(id);
+    for (const id of VIBE_HIGH_RELATED_KEYWORD_IDS[axis]) ids.add(id);
+  }
+  if (ids.size === 0) return undefined;
+  return Array.from(ids).join(',');
+}
+
+/** Low-tier Discover exclusions use comma for logical intersection (AND). */
+function buildLowSeedKeywordCsv(filters: FilterState): string | undefined {
+  const ids = new Set<number>();
+  for (const axis of ENGINE_AXES) {
+    if (filters[axis] == null) continue;
+    if (filters[axis] < 30) {
+      for (const id of ENERGY_MANIFEST[axis].low.tmdb_keyword_ids) ids.add(id);
+    }
+  }
+  if (ids.size === 0) return undefined;
+  return Array.from(ids).join(',');
+}
+
+/** Medium on an axis excludes both low/high keyword clusters for that axis. */
+function buildMediumExclusionKeywordCsv(filters: FilterState): string | undefined {
+  const ids = new Set<number>();
+  for (const axis of ENGINE_AXES) {
+    const raw = filters[axis];
+    if (raw == null) continue;
+    if (nearestFilterWeightStop(raw) !== 50) continue;
+    for (const id of ENERGY_MANIFEST[axis].low.tmdb_keyword_ids) ids.add(id);
+    for (const id of ENERGY_MANIFEST[axis].high.tmdb_keyword_ids) ids.add(id);
+  }
+  if (ids.size === 0) return undefined;
+  /** Comma = TMDB AND on `without_keywords` — every listed id participates in the exclusion rule. */
+  return Array.from(ids)
+    .filter((n) => Number.isFinite(n))
+    .join(',');
+}
+
+/** Normalize any keyword CSV to comma-separated unique numeric ids (stable order). */
+function commaKeywordCsvUnique(csv: string | undefined): string | undefined {
+  if (!csv?.trim()) return undefined;
+  const ids = new Set<number>();
+  for (const raw of csv.split(/[|,]/)) {
+    const t = raw.trim();
+    if (!/^\d+$/.test(t)) continue;
+    ids.add(Number(t));
+  }
+  if (ids.size === 0) return undefined;
+  return Array.from(ids).join(',');
+}
+
 function hasSecondaryFilters(filters: FilterState): boolean {
   if (filters.crowd != null) return true;
   if (filters.genre.length > 0) return true;
-  if (filters.theme.length > 0) return true;
-  if (filters.visualStyle.length > 0) return true;
-  if (filters.soundtrack.length > 0) return true;
-  if (filters.cultClassic != null) return true;
-  if (!filters.aListCastAny || filters.aListCast !== 50) return true;
+  if (filters.aListCast != null) return true;
   if (filters.criticsVsFans != null) return true;
   if (filters.decade.length > 0) return true;
   if (filters.runtime != null) return true;
-  if (!filters.directorProminenceAny || filters.directorProminence !== 50) return true;
-  if (filters.pacing !== 50) return true;
-  if (filters.intensity !== 50) return true;
-  if (filters.cryMeter !== 50) return true;
-  if (filters.humor !== 50) return true;
-  if (filters.romance !== 50) return true;
-  if (filters.suspense !== 50) return true;
+  if (filters.directorProminence != null) return true;
+  if (filters.narrative_pacing != null && filters.narrative_pacing !== 50) return true;
+  if (filters.emotional_tone != null && filters.emotional_tone !== 50) return true;
+  if (filters.brain_power != null && filters.brain_power !== 50) return true;
+  if (filters.visual_style != null && filters.visual_style !== 50) return true;
+  if (filters.suspense_level != null && filters.suspense_level !== 50) return true;
+  if (filters.world_style != null && filters.world_style !== 50) return true;
   return false;
 }
 
@@ -143,41 +237,46 @@ function keywordToSoundtracks(name: string): Soundtrack[] {
 function deriveSliders(
   genreIds: number[],
   keywordNames: string[]
-): { pacing: number; intensity: number; cryMeter: number; humor: number; romance: number; suspense: number } {
-  let pacing = 50;
-  let intensity = 50;
-  let cryMeter = 50;
-  let humor = 50;
-  let romance = 50;
-  let suspense = 50;
+): {
+  narrative_pacing: number;
+  emotional_tone: number;
+  brain_power: number;
+  visual_style: number;
+  suspense_level: number;
+  world_style: number;
+} {
+  let narrative_pacing = 50;
+  let emotional_tone = 50;
+  let brain_power = 50;
+  let visual_style = 50;
+  let suspense_level = 50;
+  let world_style = 50;
   const kw = keywordNames.join(' ').toLowerCase();
 
-  if (genreIds.includes(35)) { humor += 28; pacing += 10; }  // Comedy
-  if (genreIds.includes(10749)) { romance += 30; }            // Romance
-  if (genreIds.includes(27)) { intensity += 25; suspense += 28; }  // Horror
-  if (genreIds.includes(53)) { suspense += 25; intensity += 15; } // Thriller
-  if (genreIds.includes(28)) { pacing += 22; intensity += 20; }     // Action
-  if (genreIds.includes(18)) { cryMeter += 18; }                  // Drama
-  if (genreIds.includes(878)) { intensity += 10; suspense += 10; } // Sci-Fi
-  if (genreIds.includes(12)) { pacing += 8; }                      // Adventure
-  if (genreIds.includes(10402)) { romance += 5; humor += 5; }      // Music
+  if (genreIds.includes(28) || genreIds.includes(12)) narrative_pacing += 18;
+  if (genreIds.includes(18) || genreIds.includes(10749)) emotional_tone += 18;
+  if (genreIds.includes(9648) || genreIds.includes(878)) brain_power += 16;
+  if (genreIds.includes(12) || genreIds.includes(14) || genreIds.includes(878)) visual_style += 18;
+  if (genreIds.includes(53) || genreIds.includes(27)) suspense_level += 22;
+  if (genreIds.includes(18) || genreIds.includes(99)) world_style += 12;
 
-  if (kw.includes('romance')) romance += 15;
-  if (kw.includes('comedy') || kw.includes('humor')) humor += 15;
-  if (kw.includes('thriller') || kw.includes('suspense')) suspense += 18;
-  if (kw.includes('slow') || kw.includes('meditative')) pacing -= 22;
-  if (kw.includes('fast') || kw.includes('action')) pacing += 15;
-  if (kw.includes('sad') || kw.includes('grief') || kw.includes('loss')) cryMeter += 20;
-  if (kw.includes('violence') || kw.includes('intense')) intensity += 15;
+  if (kw.includes('slow') || kw.includes('meditative')) narrative_pacing -= 20;
+  if (kw.includes('fast') || kw.includes('kinetic')) narrative_pacing += 16;
+  if (kw.includes('grief') || kw.includes('loss') || kw.includes('tragedy')) emotional_tone += 20;
+  if (kw.includes('philosoph') || kw.includes('mind') || kw.includes('existential')) brain_power += 18;
+  if (kw.includes('epic') || kw.includes('spectacle')) visual_style += 18;
+  if (kw.includes('suspense') || kw.includes('thriller')) suspense_level += 20;
+  if (kw.includes('surreal') || kw.includes('fantasy') || kw.includes('dream')) world_style -= 18;
+  if (kw.includes('realism') || kw.includes('true story')) world_style += 20;
 
   const clamp = (v: number) => Math.max(0, Math.min(100, Math.round(v)));
   return {
-    pacing: clamp(pacing),
-    intensity: clamp(intensity),
-    cryMeter: clamp(cryMeter),
-    humor: clamp(humor),
-    romance: clamp(romance),
-    suspense: clamp(suspense),
+    narrative_pacing: clamp(narrative_pacing),
+    emotional_tone: clamp(emotional_tone),
+    brain_power: clamp(brain_power),
+    visual_style: clamp(visual_style),
+    suspense_level: clamp(suspense_level),
+    world_style: clamp(world_style),
   };
 }
 
@@ -355,9 +454,9 @@ export async function enrichMovie(
 
   const creditCountCache = opts?.creditCountCache ?? new Map<number, number>();
   const castSorted = [...(credits?.cast ?? [])].sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
-  const top2Cast = castSorted.slice(0, 2);
+  const top3Cast = castSorted.slice(0, 3);
   const castLeadFilmographyCounts = await Promise.all(
-    top2Cast.map((c) => fetchPersonFilmographyUniqueCount(apiKey, c.id, creditCountCache))
+    top3Cast.map((c) => fetchPersonFilmographyUniqueCount(apiKey, c.id, creditCountCache))
   );
 
   const director = credits?.crew?.find((c) => c.job === 'Director');
@@ -370,7 +469,7 @@ export async function enrichMovie(
 
   const aListActorIds = new Set(PROMINENCE_TRUTH_LIST.a_list_actors.map((a) => a.id));
   const hasAListCastFlag =
-    top2Cast.some((c) => aListActorIds.has(c.id)) || castLeadFilmographyCounts.some((n) => n >= 20);
+    top3Cast.some((c) => aListActorIds.has(c.id)) || castLeadFilmographyCounts.some((n) => n >= 20);
 
   const crewCreditsMapped = (credits?.crew ?? [])
     .filter((c) => c.job === 'Director')
@@ -389,7 +488,7 @@ export async function enrichMovie(
   }));
 
   const prestigePartial = {
-    castCredits: castSorted.slice(0, 2).map((c) => ({
+    castCredits: castSorted.slice(0, 3).map((c) => ({
       id: c.id,
       name: c.name,
       popularity: c.popularity ?? 0,
@@ -400,7 +499,6 @@ export async function enrichMovie(
     crewCredits: crewCreditsMapped,
   } as Movie;
 
-  const starPowerScoreRounded = Math.round(prestigeCastMatch(prestigePartial, 100, PROMINENCE_TRUTH_LIST));
   const directorProminence = Math.round(prestigeDirectorMatch(prestigePartial, 100, PROMINENCE_TRUTH_LIST));
 
   const voteAverage = details?.vote_average ?? base.vote_average ?? 0;
@@ -412,20 +510,29 @@ export async function enrichMovie(
 
   const posterPath = details?.poster_path ?? base.poster_path ?? null;
 
+  const overviewFull = typeof details?.overview === 'string' ? details.overview.trim() : '';
+
   return {
     id: `tmdb-${base.id}`,
     title: details?.title ?? base.title,
     year,
-    tagline: details?.tagline?.trim() || details?.overview?.slice(0, 100) || '',
+    overview: overviewFull || undefined,
+    tagline: details?.tagline?.trim() || overviewFull.slice(0, 100) || '',
     posterColor: 'from-slate-800 to-amber-900',
     posterPath: posterPath ?? undefined,
     crowd: [],
-    pacing: sliders.pacing,
-    intensity: sliders.intensity,
-    cryMeter: sliders.cryMeter,
-    humor: sliders.humor,
-    romance: sliders.romance,
-    suspense: sliders.suspense,
+    narrative_pacing: sliders.narrative_pacing,
+    emotional_tone: sliders.emotional_tone,
+    brain_power: sliders.brain_power,
+    visual_style: sliders.visual_style,
+    suspense_level: sliders.suspense_level,
+    world_style: sliders.world_style,
+    pacing: sliders.narrative_pacing,
+    cryMeter: sliders.emotional_tone,
+    humor: sliders.brain_power,
+    romance: sliders.visual_style,
+    suspense: sliders.suspense_level,
+    intensity: sliders.world_style,
     genre: genres.length ? genres : (base.genre_ids?.map((id) => GENRE_ID_TO_NAME[id]).filter(Boolean) as Genre[]) ?? [],
     genreIds: rawGenreIds.length ? [...rawGenreIds] : undefined,
     /** Always an array so scoring never treats metadata as “missing”. */
@@ -437,7 +544,6 @@ export async function enrichMovie(
     budget,
     rating: voteAverage,
     hasAListCast: hasAListCastFlag,
-    starPowerScore: starPowerScoreRounded,
     criticsVsFans: criticsVsFans(voteAverage, voteCount),
     oscarWinner: isOscarWinnerId(base.id),
     oscarNominee: isOscarNomineeId(base.id) || isOscarWinnerId(base.id),
@@ -464,25 +570,153 @@ type DiscoverFetchParams = {
   genre: FilterState['genre'];
   decade: FilterState['decade'];
   runtime: FilterState['runtime'];
-  theme: FilterState['theme'];
-  visualStyle: FilterState['visualStyle'];
-  soundtrack: FilterState['soundtrack'];
   oscarFilter: FilterState['oscarFilter'];
   /** Energy sliders → Discover keyword / genre augmentation (non–Academy paths only). */
   smartHarvest?: SmartHarvestQuerySlice;
   sortBy?:
     | 'vote_count.desc'
+    | 'vote_count.asc'
     | 'vote_average.desc'
     | 'popularity.desc'
-    | 'primary_release_date.desc';
+    | 'popularity.asc'
+    | 'revenue.desc'
+    | 'primary_release_date.desc'
+    | 'primary_release_date.asc';
   voteCountGte?: number;
   voteCountLte?: number;
   popularityLte?: number;
   popularityGte?: number;
   voteAverageGte?: number;
   voteAverageLte?: number;
+  /** Freshness floor for Discover results (YYYY-MM-DD). */
+  primaryReleaseDateGte?: string;
+  /** Optional Discover keyword seed (used by non-pacing harvest flows). */
+  withKeywordsCsv?: string;
+  /** `with_keywords` join mode: comma AND (default) or pipe OR for soft vibe filters. */
+  withKeywordsJoinMode?: 'and' | 'or';
+  /** Raw comma-separated TMDB keyword IDs for Discover `without_keywords` (comma AND semantics). */
+  withoutKeywordsCsv?: string;
   genreJoinMode?: 'and' | 'or';
 };
+
+const PACING_FAST_KEYWORDS = [
+  'ticking clock',
+  'suspense',
+  'thriller',
+  'chase',
+  'action',
+  'adventure',
+  'racing',
+  'violence',
+  'gunfight',
+  'urgent',
+  'momentum',
+  'fast-paced',
+  'high stakes',
+  'intense',
+  'anxiety',
+  'crime spree',
+  'non-stop action',
+  'heist',
+  'chaotic',
+  'survival',
+  'escape',
+  'breathless',
+  'adrenaline',
+  'manhunt',
+  'double cross',
+  'rescue mission',
+  'explosive',
+] as const;
+
+const PACING_SLOW_KEYWORDS = [
+  'meditative',
+  'slow burn',
+  'atmospheric',
+  'character study',
+  'philosophical',
+  'long take',
+  'minimalist',
+  'existential',
+  'slice of life',
+  'observational',
+  'pastoral',
+  'poetic cinema',
+  'quiet',
+  'melancholic',
+  'intimate',
+  'slow-paced',
+  'psychological drama',
+] as const;
+type ActivePacingMode = 'fast' | 'slow' | null;
+
+function activePacingMode(filters: FilterState): ActivePacingMode {
+  const next = filters.narrative_pacing;
+  const legacy = filters.pacing;
+  if (next == null && legacy == null) return null;
+  const nextStop = next == null ? null : nearestFilterWeightStop(next);
+  const legacyStop = legacy == null ? null : nearestFilterWeightStop(legacy);
+  // Guard against stale mixed state (e.g. one says fast, the other says slow): fall back to baseline.
+  if (
+    nextStop != null &&
+    legacyStop != null &&
+    ((nextStop === FILTER_WEIGHT_HIGH && legacyStop === FILTER_WEIGHT_LOW) ||
+      (nextStop === FILTER_WEIGHT_LOW && legacyStop === FILTER_WEIGHT_HIGH))
+  ) {
+    return null;
+  }
+  const stop = nextStop ?? legacyStop;
+  if (stop === FILTER_WEIGHT_HIGH) return 'fast';
+  if (stop === FILTER_WEIGHT_LOW) return 'slow';
+  return null;
+}
+
+function joinKeywordCsv(raw: string, mode: 'and' | 'or'): string {
+  const cleaned = raw
+    .split(/[|,]/)
+    .map((x) => x.trim())
+    .filter((x) => /^\d+$/.test(x));
+  return mode === 'or' ? cleaned.join('|') : cleaned.join(',');
+}
+
+function normalizePacingText(s: string): string {
+  return s.toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function countPacingKeywordHits(haystack: string, bucket: readonly string[]): number {
+  let hits = 0;
+  for (const term of bucket) {
+    const needle = normalizePacingText(term);
+    if (!needle) continue;
+    if (haystack.includes(needle)) hits += 1;
+  }
+  return hits;
+}
+
+function countPacingHits(movie: Movie, pacing: Exclude<ActivePacingMode, null>): number {
+  const text = normalizePacingText(
+    [movie.overview ?? '', movie.tagline ?? '', ...(movie.keywordNames ?? [])].join(' ')
+  );
+  if (pacing === 'fast') return countPacingKeywordHits(text, PACING_FAST_KEYWORDS);
+  return countPacingKeywordHits(text, PACING_SLOW_KEYWORDS);
+}
+
+function stripAnimationFromWithoutGenres(smartHarvest: SmartHarvestQuerySlice | undefined): SmartHarvestQuerySlice | undefined {
+  if (!smartHarvest) return smartHarvest;
+  if (!smartHarvest.withoutGenres) return smartHarvest;
+  const keep = smartHarvest.withoutGenres
+    .split(',')
+    .map((x) => x.trim())
+    .filter((x) => /^\d+$/.test(x) && x !== '16');
+  return { ...smartHarvest, withoutGenres: keep.length > 0 ? keep.join(',') : undefined };
+}
+
+function calculatePedigreeScore(movie: Movie, filters: FilterState): number {
+  if (filters.oscarFilter == null) return 0;
+  if (filters.oscarFilter === 'winner') return movie.oscarWinner ? 20 : 0;
+  if (filters.oscarFilter === 'nominee') return movie.oscarNominee ? 20 : 0;
+  return movie.oscarWinner || movie.oscarNominee ? 20 : 0;
+}
 
 async function fetchDiscoverRaw(
   apiKey: string,
@@ -494,10 +728,7 @@ async function fetchDiscoverRaw(
     genreJoinMode: params.genreJoinMode,
     decade: params.decade?.length ? params.decade.filter((d): d is NonNullable<typeof d> => d != null) : undefined,
     runtime: params.runtime ?? null,
-    theme: params.theme?.length ? params.theme : undefined,
-    visualStyle: params.visualStyle?.length ? params.visualStyle : undefined,
-    soundtrack: params.soundtrack?.length ? params.soundtrack : undefined,
-    oscarFilter: params.oscarFilter !== 'any' ? params.oscarFilter : undefined,
+    oscarFilter: params.oscarFilter ?? undefined,
     page,
     sortBy: params.sortBy,
     voteCountGte: params.voteCountGte,
@@ -508,11 +739,26 @@ async function fetchDiscoverRaw(
     voteAverageLte: params.voteAverageLte,
     smartHarvest: params.smartHarvest,
   });
+  if (params.primaryReleaseDateGte) q['primary_release_date.gte'] = params.primaryReleaseDateGte;
+  if (params.withKeywordsCsv) {
+    q.with_keywords = joinKeywordCsv(params.withKeywordsCsv, params.withKeywordsJoinMode ?? 'and');
+  }
+  if (params.withoutKeywordsCsv) q.without_keywords = params.withoutKeywordsCsv;
   const url = `${TMDB_BASE}/discover/movie?${new URLSearchParams({ ...q, api_key: apiKey }).toString()}`;
   const debugUrl = url.replace(/api_key=[^&]+/, 'api_key=***');
-  if (params.oscarFilter === 'winner' || process.env.NODE_ENV !== 'production') {
-    console.log('[TMDB Discover]', debugUrl);
-    console.log('Final API URL:', debugUrl);
+  if (process.env.NODE_ENV === 'development') {
+    const discoverParams = {
+      page: q.page,
+      sort_by: q.sort_by,
+      with_genres: q.with_genres ?? '(none)',
+      without_genres: q.without_genres ?? '(none)',
+      with_keywords: q.with_keywords ?? '(none)',
+      without_keywords: q.without_keywords ?? '(none)',
+      'vote_count.gte': q['vote_count.gte'],
+      'vote_average.gte': q['vote_average.gte'],
+    };
+    console.log('[TMDB Discover] page', page, 'params:', discoverParams);
+    console.log('Final TMDB Discover URL:', debugUrl);
   }
   const res = await fetch(url);
   if (!res.ok) throw new Error(`TMDB Discover ${res.status}`);
@@ -531,12 +777,21 @@ const GENRE_FALLBACK_MIN_RESULTS = 10;
 /** Second pass without UI genres when pool is thin and a slider is at 100 (wider `with_genres` OR). */
 const SLIDER_100_GENRE_BACKUP_MIN_UNIQUE = 40;
 
-/** Deep search: 5 parallel Discover calls (pages 1–5) → up to ~100 rows before dedupe cap. */
-const DEEP_SEARCH_PAGES = [1, 2, 3, 4, 5] as const;
+/** If strict `with_keywords` harvest returns fewer unique rows than this, strip keywords and re-harvest (OR genres + popularity). */
+const KEYWORD_SAFETY_VALVE_MIN_UNIQUE = 40;
+
+/** After vibe filter, pad with popular same-genre titles so the client grid rarely runs empty. */
+const MIN_RANKED_BEFORE_PADDING = 40;
+
+/** Max Discover rows merged before density pre-rank (popularity + long-tail). */
+export const DISCOVER_CANDIDATE_MAX = 1000;
+/** Movies fully enriched and returned to the client after ranking. */
 export const DEEP_POOL_MAX = 100;
+/** Discover pages 1–5 → up to 100 raw TMDB rows (after dedupe) before enrich + vibe resort. */
+const DEEP_REVIEW_RAW_MAX = 100;
 
 export type GetTmdbMatchesOptions = {
-  /** @deprecated Deep search always uses pages 1–5; ignored. */
+  /** @deprecated Deep review uses discover pages 1–5 only; ignored. */
   discoverStartPage?: number;
 };
 
@@ -548,44 +803,293 @@ function dedupeDiscoverRows(rows: TmdbMovieResult[]): TmdbMovieResult[] {
   return Array.from(byId.values());
 }
 
+const PASS_A_BULLSEYE_COUNT = 100;
+const PASS_B_GENRE_WIDE_COUNT = 400;
+const PASS_C_DEEP_COUNT = 200;
+const TMDB_DISCOVER_PAGE_SIZE = 20;
+const PASS_B_PAGE_COUNT = Math.ceil(PASS_B_GENRE_WIDE_COUNT / TMDB_DISCOVER_PAGE_SIZE);
+const PASS_C_PAGE_COUNT = Math.ceil(PASS_C_DEEP_COUNT / TMDB_DISCOVER_PAGE_SIZE);
+/** Pass C deep sift pages (inclusive). */
+const DEEP_SIFT_PAGE_MIN = 20;
+const DEEP_SIFT_PAGE_MAX = 200;
+const EXTRA_EXPANSION_ROUNDS = 3;
+const EXTRA_EXPANSION_PAGE_COUNT = 20;
+const EXTRA_EXPANSION_PAGE_MIN = 1;
+const EXTRA_EXPANSION_PAGE_MAX = 400;
+const DISCOVER_FETCH_CHUNK = 5;
+
+/** In-place Fisher–Yates shuffle (copy). */
+function fisherYatesShuffle<T>(items: readonly T[]): T[] {
+  const a = items.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const t = a[i]!;
+    a[i] = a[j]!;
+    a[j] = t;
+  }
+  return a;
+}
+
+/** Fisher–Yates: `count` distinct page numbers in `[min, max]` (inclusive). */
+function pickRandomDistinctPages(count: number, min: number, max: number): number[] {
+  const span = max - min + 1;
+  const take = Math.min(Math.max(0, count), span);
+  const pool = Array.from({ length: span }, (_, i) => i + min);
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const a = pool[i]!;
+    pool[i] = pool[j]!;
+    pool[j] = a;
+  }
+  return pool.slice(0, take);
+}
+
+async function fetchDiscoverPagesChunked(
+  apiKey: string,
+  base: DiscoverFetchParams,
+  genreJoinMode: 'and' | 'or',
+  sortBy: NonNullable<DiscoverFetchParams['sortBy']>,
+  pages: readonly number[]
+): Promise<TmdbMovieResult[]> {
+  const params = { ...base, genreJoinMode, sortBy };
+  const chunks: TmdbMovieResult[] = [];
+  for (let i = 0; i < pages.length; i += DISCOVER_FETCH_CHUNK) {
+    const slice = pages.slice(i, i + DISCOVER_FETCH_CHUNK);
+    const batch = await Promise.all(slice.map((page) => fetchDiscoverRaw(apiKey, params, page)));
+    chunks.push(...batch.flatMap((d) => d.results ?? []));
+  }
+  return chunks;
+}
+
+/** Deep review: TMDB `/discover/movie` pages 1–5 with the same hard params as `discoverBase` (genre/decade/runtime/etc.). */
+async function fetchDiscoverPagesOneToFive(
+  apiKey: string,
+  base: DiscoverFetchParams,
+  genreJoinMode: 'and' | 'or'
+): Promise<TmdbMovieResult[]> {
+  const sortBy = base.sortBy ?? 'vote_average.desc';
+  const params: DiscoverFetchParams = { ...base, genreJoinMode, sortBy };
+  const pages = [1, 2, 3, 4, 5] as const;
+  const batch = await Promise.all(pages.map((page) => fetchDiscoverRaw(apiKey, params, page)));
+  return batch.flatMap((d) => d.results ?? []);
+}
+
 /**
- * **Deep API-side search:** 5 simultaneous `/discover/movie` calls (pages 1–5), dedupe, cap at {@link DEEP_POOL_MAX}.
+ * Divergent seed: 3 passes × 2 pages in parallel to escape the popularity monoculture.
+ * Classics (vote_average + vote floor) + trending (popularity) + deep cuts (revenue, random offset).
+ * Merges ~120 rows → dedupe → shuffle → cap at PASS_A_BULLSEYE_COUNT.
  */
+async function fetchDiscoverFirstFivePages(
+  apiKey: string,
+  base: DiscoverFetchParams,
+  genreJoinMode: 'and' | 'or'
+): Promise<TmdbMovieResult[]> {
+  const common: DiscoverFetchParams = { ...base, genreJoinMode };
+  const revenueStart = 2 + Math.floor(Math.random() * 9); // pages 2–10 (inclusive)
+  const revenuePages = [revenueStart, revenueStart + 1];
+
+  const [batchClassics, batchTrending, batchRevenue] = await Promise.all([
+    Promise.all(
+      [1, 2].map((page) =>
+        fetchDiscoverRaw(
+          apiKey,
+          {
+            ...common,
+            sortBy: 'vote_average.desc',
+            voteCountGte: Math.max(common.voteCountGte ?? 0, 500),
+          },
+          page
+        )
+      )
+    ),
+    Promise.all(
+      [1, 2].map((page) =>
+        fetchDiscoverRaw(
+          apiKey,
+          {
+            ...common,
+            sortBy: 'popularity.desc',
+          },
+          page
+        )
+      )
+    ),
+    Promise.all(
+      revenuePages.map((page) =>
+        fetchDiscoverRaw(
+          apiKey,
+          {
+            ...common,
+            sortBy: 'revenue.desc',
+          },
+          page
+        )
+      )
+    ),
+  ]);
+
+  const merged = [...batchClassics, ...batchTrending, ...batchRevenue].flatMap((d) => d.results ?? []);
+  const deduped = dedupeDiscoverRows(merged);
+  const shuffled = fisherYatesShuffle(deduped);
+  return shuffled.slice(0, PASS_A_BULLSEYE_COUNT);
+}
+
+/** Multi-pass Deep Pool: Pass A bullseye (400) + Pass B genre-wide (400) + Pass C deep sift (200). */
 async function harvestDiscoverDeepPages(
   apiKey: string,
   discoverBase: DiscoverFetchParams,
-  genreJoinMode: 'and' | 'or'
+  filters: FilterState,
+  genreJoinMode: 'and' | 'or',
+  opts?: { useSeedKeywords?: boolean; forcePassA?: boolean }
 ): Promise<TmdbMovieResult[]> {
-  const params = { ...discoverBase, genreJoinMode };
-  const allPagesResults = await Promise.all(
-    DEEP_SEARCH_PAGES.map((page) => fetchDiscoverRaw(apiKey, params, page))
+  const useSeedKeywords = opts?.useSeedKeywords !== false;
+  const seedCsv = useSeedKeywords ? commaKeywordCsvUnique(buildSliderSeedKeywordCsv(filters)) : undefined;
+  const lowSeedCsv = useSeedKeywords ? commaKeywordCsvUnique(buildLowSeedKeywordCsv(filters)) : undefined;
+  const medExcludeCsv = commaKeywordCsvUnique(buildMediumExclusionKeywordCsv(filters));
+  const combinedWithoutCsv = commaKeywordCsvUnique(
+    [lowSeedCsv, medExcludeCsv].filter((x): x is string => typeof x === 'string' && x.length > 0).join(',')
   );
-  const combined = allPagesResults.flatMap((data) => data.results ?? []);
-  const unique = dedupeDiscoverRows(combined);
-  const capped = unique.slice(0, DEEP_POOL_MAX);
+  const shouldRunPassA = opts?.forcePassA === true || !!seedCsv || !!combinedWithoutCsv;
+  const passAPageCount = 6; // 2 classics + 2 trending + 2 revenue (divergent seed)
+  const passBPages = Array.from({ length: PASS_B_PAGE_COUNT }, (_, i) => i + 1);
+  const passCPages = pickRandomDistinctPages(PASS_C_PAGE_COUNT, DEEP_SIFT_PAGE_MIN, DEEP_SIFT_PAGE_MAX);
+  console.log('[Discover] Pass pages', {
+    passA: shouldRunPassA ? `divergent:${passAPageCount}pages(classics+trending+revenue)` : [],
+    passB: passBPages,
+    passC: passCPages,
+    passASeedWithKeywords: seedCsv ?? '(none)',
+    passASeedWithoutKeywords: combinedWithoutCsv || '(none)',
+    passASeedMode: useSeedKeywords ? 'seeded' : 'unseeded',
+  });
+  const keywordFreeSmartHarvest: SmartHarvestQuerySlice = {
+    ...(discoverBase.smartHarvest ?? emptySmartHarvestSlice()),
+    withKeywordsOr: undefined,
+    withoutKeywordsOr: undefined,
+  };
+
+  const passABase: DiscoverFetchParams = {
+    ...discoverBase,
+    withKeywordsCsv: seedCsv,
+    withoutKeywordsCsv: combinedWithoutCsv || undefined,
+  };
+  const passBBase: DiscoverFetchParams = {
+    ...discoverBase,
+    smartHarvest: keywordFreeSmartHarvest,
+    withKeywordsCsv: undefined,
+    withoutKeywordsCsv: medExcludeCsv || undefined,
+    sortBy: 'vote_count.desc',
+  };
+  const passCBase: DiscoverFetchParams = {
+    ...discoverBase,
+    smartHarvest: keywordFreeSmartHarvest,
+    withKeywordsCsv: undefined,
+    withoutKeywordsCsv: medExcludeCsv || undefined,
+    sortBy: 'popularity.desc',
+  };
+
+  const [batchA, batchB, batchC] = await Promise.all([
+    shouldRunPassA
+      ? fetchDiscoverFirstFivePages(apiKey, passABase, genreJoinMode)
+      : Promise.resolve([] as TmdbMovieResult[]),
+    fetchDiscoverPagesChunked(apiKey, passBBase, genreJoinMode, 'vote_count.desc', passBPages),
+    fetchDiscoverPagesChunked(apiKey, passCBase, genreJoinMode, 'popularity.desc', passCPages),
+  ]);
+  const fetchedRowsInitial = batchA.length + batchB.length + batchC.length;
+  const pagesInitial = (shouldRunPassA ? passAPageCount : 0) + passBPages.length + passCPages.length;
+
+  let passA = dedupeDiscoverRows(batchA).slice(0, PASS_A_BULLSEYE_COUNT);
+  const passAIds = new Set(passA.map((m) => m.id));
+  let passB = dedupeDiscoverRows(batchB)
+    .filter((m) => !passAIds.has(m.id))
+    .slice(0, PASS_B_GENRE_WIDE_COUNT);
+  const seededIds = new Set([...Array.from(passAIds), ...passB.map((m) => m.id)]);
+  let passC = dedupeDiscoverRows(batchC)
+    .filter((m) => !seededIds.has(m.id))
+    .slice(0, PASS_C_DEEP_COUNT);
+
+  let unique = dedupeDiscoverRows([...passA, ...passB, ...passC]);
+  if (unique.length < KEYWORD_SAFETY_VALVE_MIN_UNIQUE) {
+    const deepRelaxedPages = pickRandomDistinctPages(PASS_C_PAGE_COUNT, DEEP_SIFT_PAGE_MIN, DEEP_SIFT_PAGE_MAX);
+    const extraDeep = await fetchDiscoverPagesChunked(
+      apiKey,
+      {
+        ...discoverBase,
+        smartHarvest: keywordFreeSmartHarvest,
+        sortBy: 'popularity.desc',
+        withKeywordsCsv: undefined,
+        withoutKeywordsCsv: medExcludeCsv || undefined,
+      },
+      genreJoinMode,
+      'popularity.desc',
+      deepRelaxedPages
+    );
+    unique = dedupeDiscoverRows([...unique, ...extraDeep]);
+  }
+
+  // Organic breadth expansion: sample additional random page blocks before we give up on density.
+  let expansionPages = 0;
+  let expansionRows = 0;
+  for (let round = 0; round < EXTRA_EXPANSION_ROUNDS && unique.length < DISCOVER_CANDIDATE_MAX; round++) {
+    const extraPages = pickRandomDistinctPages(
+      EXTRA_EXPANSION_PAGE_COUNT,
+      EXTRA_EXPANSION_PAGE_MIN,
+      EXTRA_EXPANSION_PAGE_MAX
+    );
+    const extra = await fetchDiscoverPagesChunked(
+      apiKey,
+      {
+        ...discoverBase,
+        smartHarvest: keywordFreeSmartHarvest,
+        sortBy: 'popularity.desc',
+        withKeywordsCsv: undefined,
+        withoutKeywordsCsv: medExcludeCsv || undefined,
+      },
+      genreJoinMode,
+      'popularity.desc',
+      extraPages
+    );
+    expansionPages += extraPages.length;
+    expansionRows += extra.length;
+    unique = dedupeDiscoverRows([...unique, ...extra]);
+  }
+
+  const capped = unique.slice(0, DISCOVER_CANDIDATE_MAX);
   console.log(
-    '[Discover] Deep search pages 1–5: raw rows',
-    combined.length,
-    'unique',
+    '[Discover] Multi-pass pool: A(bullseye keywords) + B(vote_count genre-wide) + C(deep sift p20–200) unique',
     unique.length,
-    'capped',
+    '→ capped',
     capped.length
   );
+  console.log('[Discover] Coverage audit', {
+    pages_initial: pagesInitial,
+    rows_initial: fetchedRowsInitial,
+    pages_expansion: expansionPages,
+    rows_expansion: expansionRows,
+    pages_total: pagesInitial + expansionPages,
+    rows_total: fetchedRowsInitial + expansionRows,
+  });
   return capped;
 }
 
 /** Map Energy sliders (0–100) to a minimum TMDB `vote_average` floor (5.0–7.0). */
 function energySlidersToVoteAverageGte(filters: FilterState): number {
-  const keys = ['pacing', 'intensity', 'cryMeter', 'humor', 'romance', 'suspense'] as const;
+  const keys = [
+    'narrative_pacing',
+    'emotional_tone',
+    'brain_power',
+    'visual_style',
+    'suspense_level',
+    'world_style',
+  ] as const;
   let sum = 0;
-  for (const k of keys) sum += filters[k];
+  for (const k of keys) sum += filters[k] ?? 50;
   const avg = sum / keys.length;
   return 5 + (avg / 100) * 2;
 }
 
 /** Apply Discover quality floor from energy sliders (merged with Star Power / Top Rated floors). */
 function applyEnergyVoteAverageFloor(discoverBase: DiscoverFetchParams, filters: FilterState): void {
-  if (anyEnergySliderAt100(filters)) return;
+  if (anyEmotionSliderAbove70(filters)) return;
   const floor = energySlidersToVoteAverageGte(filters);
   discoverBase.voteAverageGte = Math.max(discoverBase.voteAverageGte ?? 0, floor);
 }
@@ -639,6 +1143,50 @@ function tmdbIdFromMovieId(movieId: string): number {
   return Number.isNaN(n) ? 0 : n;
 }
 
+/** When vibe filtering leaves too few rows, add popular Discover titles in the user’s genre(s) for a full grid. */
+async function padRankedPoolIfThin(
+  apiKey: string,
+  filters: FilterState,
+  genreJoinMode: 'and' | 'or',
+  ranked: Movie[]
+): Promise<Movie[]> {
+  if (ranked.length >= MIN_RANKED_BEFORE_PADDING) return ranked;
+  const excluded = new Set(ranked.map((m) => tmdbIdFromMovieId(m.id)));
+  const padDiscover: DiscoverFetchParams = {
+    genre: filters.genre.length ? filters.genre : [],
+    decade: filters.decade,
+    runtime: filters.runtime,
+    oscarFilter: null,
+    smartHarvest: emptySmartHarvestSlice(),
+    sortBy: 'vote_average.desc',
+    voteCountGte: 500,
+  };
+  const padRaw = await harvestDiscoverDeepPages(
+    apiKey,
+    padDiscover,
+    filters,
+    filters.genre.length >= 2 ? genreJoinMode : 'and',
+    { useSeedKeywords: false, forcePassA: true }
+  );
+  const fresh = padRaw.filter((r) => !excluded.has(r.id));
+  if (fresh.length === 0) return ranked;
+  const padEnriched = await enrichDiscoverPool(apiKey, fresh.slice(0, DEEP_POOL_MAX));
+  const out = [...ranked];
+  for (const m of padEnriched) {
+    const id = tmdbIdFromMovieId(m.id);
+    if (excluded.has(id)) continue;
+    if (filters.genre.length > 0 && !m.genre.some((g) => filters.genre.includes(g))) continue;
+    excluded.add(id);
+    const tr = combinedTopRatedMatchScore(m);
+    m.matchPercentage = Math.max(28, Math.round(tr * 0.5));
+    m.finalMatchScore = tr * 0.5;
+    out.push(m);
+    if (out.length >= DEEP_POOL_MAX) break;
+  }
+  console.log('[Discover] Padded ranked pool:', ranked.length, '→', out.length);
+  return out;
+}
+
 /** Fetch and enrich movies by TMDB IDs only; then keep only those in the allowed set. */
 async function fetchAndEnrichByIds(
   apiKey: string,
@@ -684,7 +1232,25 @@ export async function getTmdbMatches(
   /** @deprecated Full Grid rule handles pagination; ignored. */
   _options?: GetTmdbMatchesOptions
 ): Promise<Movie[]> {
-  const oscarFilter = String(filters.oscarFilter ?? 'any').toLowerCase();
+  const weights = {
+    narrative_pacing: filters.narrative_pacing,
+    emotional_tone: filters.emotional_tone,
+    brain_power: filters.brain_power,
+    visual_style: filters.visual_style,
+    suspense_level: filters.suspense_level,
+    world_style: filters.world_style,
+    intentResolved: {
+      narrative_pacing: nearestFilterWeightStop(filters.narrative_pacing ?? 50) / 100,
+      emotional_tone: nearestFilterWeightStop(filters.emotional_tone ?? 50) / 100,
+      brain_power: nearestFilterWeightStop(filters.brain_power ?? 50) / 100,
+      visual_style: nearestFilterWeightStop(filters.visual_style ?? 50) / 100,
+      suspense_level: nearestFilterWeightStop(filters.suspense_level ?? 50) / 100,
+      world_style: nearestFilterWeightStop(filters.world_style ?? 50) / 100,
+    },
+  };
+  console.log('DEBUG: Incoming User Weights:', weights);
+
+  const oscarFilter = filters.oscarFilter;
   const isWinnerOnly = oscarFilter === 'winner';
   const isNomineeOnly = oscarFilter === 'nominee';
   const isBothOnly = oscarFilter === 'both';
@@ -704,19 +1270,29 @@ export async function getTmdbMatches(
     return fetchAndEnrichByIds(apiKey, ids, isOscarListedId, filters);
   }
 
+  /**
+   * Prestige (director prominence) 80–100 + Oscar Any: strict Best Picture pool only (winners + nominees truth list).
+   */
+  if (
+    filters.directorProminence === 'high' &&
+    filters.oscarFilter == null
+  ) {
+    const ids = getOscarBothIds();
+    return fetchAndEnrichByIds(apiKey, ids, isOscarListedId, filters);
+  }
+
   const baseParams: {
     genre: FilterState['genre'];
     decade: FilterState['decade'];
     runtime: FilterState['runtime'];
-    theme: FilterState['theme'];
-    visualStyle: FilterState['visualStyle'];
-    soundtrack: FilterState['soundtrack'];
     oscarFilter: FilterState['oscarFilter'];
     sortBy?:
       | 'vote_count.desc'
+      | 'vote_count.asc'
       | 'vote_average.desc'
       | 'popularity.desc'
-      | 'primary_release_date.desc';
+      | 'primary_release_date.desc'
+      | 'primary_release_date.asc';
     voteCountGte?: number;
     voteCountLte?: number;
     popularityLte?: number;
@@ -727,33 +1303,8 @@ export async function getTmdbMatches(
     genre: filters.genre,
     decade: filters.decade,
     runtime: filters.runtime,
-    theme: filters.theme,
-    visualStyle: filters.visualStyle,
-    soundtrack: filters.soundtrack,
     oscarFilter: filters.oscarFilter,
   };
-
-  /**
-   * Star Power → TMDB `/discover/movie` (no client-side cast filtering for the pool).
-   * Low band: low popularity cap + minimum rating for hidden gems. High band: high minimum popularity for hits.
-   */
-  if (!filters.aListCastAny) {
-    const c = filters.aListCast;
-    if (c <= 10) {
-      baseParams.popularityLte = 25;
-      baseParams.voteAverageGte = 7.0;
-      if (filters.criticsVsFans == null) baseParams.sortBy = 'vote_average.desc';
-    } else if (c >= 90) {
-      baseParams.popularityGte = 80;
-      if (filters.criticsVsFans == null) {
-        baseParams.sortBy = 'popularity.desc';
-        baseParams.voteCountGte = Math.max(baseParams.voteCountGte ?? 0, 500);
-      }
-    } else if (filters.criticsVsFans == null) {
-      baseParams.sortBy = 'popularity.desc';
-      baseParams.voteCountGte = Math.max(baseParams.voteCountGte ?? 0, 500);
-    }
-  }
 
   /**
    * Critics vs Fans: sort + vote floors. **Top Rated** (`both`) always uses `vote_average.desc` and
@@ -776,20 +1327,18 @@ export async function getTmdbMatches(
   }
 
   let genreJoinMode: 'and' | 'or' = 'and';
-  const filterMoviesOpts: FilterMoviesOptions = {};
 
-  const smartHarvest = buildSmartHarvestAugmentation(filters);
+  const smartHarvest = stripAnimationFromWithoutGenres({ withKeywordIds: [], withoutKeywordIds: [] });
   if (process.env.NODE_ENV === 'development') {
     console.log('[Cinematch] Smart Harvest', smartHarvest);
   }
 
+  const activeBaselineGenres: FilterState['genre'] =
+    (baseParams.genre ?? []).length > 0 ? (baseParams.genre ?? []) : ([] as FilterState['genre']);
   const discoverBase: DiscoverFetchParams = {
-    genre: baseParams.genre,
+    genre: activeBaselineGenres,
     decade: baseParams.decade,
     runtime: baseParams.runtime,
-    theme: baseParams.theme,
-    visualStyle: baseParams.visualStyle,
-    soundtrack: baseParams.soundtrack,
     oscarFilter: baseParams.oscarFilter,
     smartHarvest,
     sortBy: baseParams.sortBy,
@@ -800,84 +1349,221 @@ export async function getTmdbMatches(
     voteAverageGte: baseParams.voteAverageGte,
     voteAverageLte: baseParams.voteAverageLte,
   };
+  if (filters.aListCast === 'low') {
+    discoverBase.voteCountGte = 50;
+    discoverBase.voteCountLte = 3000;
+    discoverBase.sortBy = 'vote_average.desc';
+    discoverBase.voteAverageGte = 6.5;
+  } else if (filters.aListCast === 'high') {
+    discoverBase.voteCountGte = 5000;
+  }
+  const pacingMode = activePacingMode(filters);
+  // No-drop warehouse rule: never use with_keywords in Discover URL.
+  discoverBase.withKeywordsCsv = undefined;
+  discoverBase.withKeywordsJoinMode = undefined;
 
-  /** Max-slider intent: surface popular titles that fit the vibe (overrides Star Power discover caps). */
-  if (anyEnergySliderAt100(filters)) {
-    discoverBase.sortBy = 'popularity.desc';
+  const indieDiscover =
+    filters.aListCast === 'low' && filters.criticsVsFans == null;
+  const fansDiscover = filters.criticsVsFans === 'fans';
+
+  /**
+   * Default Discover: quality + minimum engagement (no `popularity.desc` loop).
+   * Skips only **Fans** sort and **indie Star Power** (low vote_count.asc) paths.
+   */
+  if (!indieDiscover && !fansDiscover) {
+    discoverBase.sortBy = 'vote_average.desc';
+    discoverBase.voteCountGte = Math.max(discoverBase.voteCountGte ?? 0, 500);
     delete discoverBase.voteCountLte;
     delete discoverBase.popularityLte;
     delete discoverBase.popularityGte;
     delete discoverBase.voteAverageGte;
   } else {
-    /** Pacing / energy sliders → `vote_average.gte` (refines Discover against the full DB). */
     applyEnergyVoteAverageFloor(discoverBase, filters);
   }
 
-  // --- (1) Deep search: 5 parallel Discover calls (pages 1–5) → ≤100 unique TMDB rows ---
-  let allMovies: TmdbMovieResult[];
-  if (filters.genre.length >= 2) {
-    allMovies = await harvestDiscoverDeepPages(apiKey, discoverBase, 'and');
-    if (allMovies.length < GENRE_FALLBACK_MIN_RESULTS) {
-      genreJoinMode = 'or';
-      filterMoviesOpts.genreFilterMode = 'any';
-      allMovies = await harvestDiscoverDeepPages(apiKey, discoverBase, 'or');
-    }
-  } else {
-    allMovies = await harvestDiscoverDeepPages(apiKey, discoverBase, 'and');
+  const anchorBase: DiscoverFetchParams = {
+    ...discoverBase,
+    sortBy: 'vote_count.desc',
+    genreJoinMode: activeBaselineGenres.length > 1 ? 'or' : 'and',
+  };
+  console.log(
+    '[DEBUG anchorBase full]',
+    JSON.stringify(
+      {
+        genre: anchorBase.genre,
+        genreJoinMode: anchorBase.genreJoinMode,
+        sortBy: anchorBase.sortBy,
+        withKeywordsCsv: anchorBase.withKeywordsCsv,
+        withoutKeywordsCsv: anchorBase.withoutKeywordsCsv,
+        smartHarvest: anchorBase.smartHarvest,
+        voteCountGte: anchorBase.voteCountGte,
+        popularityLte: anchorBase.popularityLte,
+      },
+      null,
+      2,
+    ),
+  );
+  console.log(
+    '[DEBUG discoverBase full]',
+    JSON.stringify(
+      {
+        genre: discoverBase.genre,
+        genreJoinMode: discoverBase.genreJoinMode,
+        sortBy: discoverBase.sortBy,
+        withKeywordsCsv: discoverBase.withKeywordsCsv,
+        withoutKeywordsCsv: discoverBase.withoutKeywordsCsv,
+        smartHarvest: discoverBase.smartHarvest,
+        voteCountGte: discoverBase.voteCountGte,
+        voteCountLte: discoverBase.voteCountLte,
+        popularityLte: discoverBase.popularityLte,
+        popularityGte: discoverBase.popularityGte,
+        voteAverageGte: discoverBase.voteAverageGte,
+        voteAverageLte: discoverBase.voteAverageLte,
+        primaryReleaseDateGte: discoverBase.primaryReleaseDateGte,
+        withKeywordsJoinMode: discoverBase.withKeywordsJoinMode,
+        decade: discoverBase.decade,
+        runtime: discoverBase.runtime,
+        oscarFilter: discoverBase.oscarFilter,
+      },
+      null,
+      2,
+    ),
+  );
+
+  // Warehouse pull:
+  // - Single genre: keep broad baseline pages 1-10.
+  // - Multi genre: fetch pages 1-5 per selected genre (strict per-genre representatives), then merge+dedupe.
+  const initialRows =
+    activeBaselineGenres.length >= 2
+      ? await Promise.all(
+          activeBaselineGenres.flatMap((genre) =>
+            [1, 2, 3, 4, 5].map((page) =>
+              fetchDiscoverRaw(
+                apiKey,
+                { ...anchorBase, genre: [genre], genreJoinMode: 'and' },
+                page,
+              ),
+            ),
+          ),
+        )
+      : await Promise.all([1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((page) => fetchDiscoverRaw(apiKey, anchorBase, page)));
+  let allMovies = dedupeDiscoverRows(initialRows.flatMap((d) => d.results ?? []));
+
+  // Multi-genre fallback: widen from AND to OR if pool is thin.
+  if (allMovies.length < DEEP_POOL_MAX && activeBaselineGenres.length >= 2) {
+    genreJoinMode = 'or';
+    const orBase: DiscoverFetchParams = { ...anchorBase, genreJoinMode: 'or' };
+    const orRows = await Promise.all([1, 2, 3, 4, 5].map((page) => fetchDiscoverRaw(apiKey, orBase, page)));
+    allMovies = dedupeDiscoverRows([...allMovies, ...orRows.flatMap((d) => d.results ?? [])]);
   }
 
-  /** Re-fetch without UI genres so `with_genres` is slider-only OR (wider pool when user AND-ed many genres). */
-  if (
-    allMovies.length < SLIDER_100_GENRE_BACKUP_MIN_UNIQUE &&
-    anyEnergySliderAt100(filters) &&
-    filters.genre.length > 0
-  ) {
-    const backupBase: DiscoverFetchParams = {
-      ...discoverBase,
-      genre: [],
-      sortBy: 'popularity.desc',
-    };
-    delete backupBase.voteCountLte;
-    delete backupBase.popularityLte;
-    delete backupBase.popularityGte;
-    delete backupBase.voteAverageGte;
-    const extraRows = await harvestDiscoverDeepPages(apiKey, backupBase, 'and');
-    allMovies = mergeDiscoverRowsById(allMovies, extraRows);
-    const pipe = discoverBase.smartHarvest?.withGenresSlider100Pipe;
-    console.log(
-      '[Cinematch] Slider-100 genre backup harvest: merged',
-      extraRows.length,
-      'rows (slider with_genres pipe:',
-      pipe ?? discoverBase.smartHarvest?.withGenresOr ?? 'keywords-only',
-      ')'
-    );
-  }
-
-  if (filters.cultClassic === true) {
-    const cultRows = await harvestDiscoverDeepPages(
+  // Hard 100 guarantee: keep backfilling next anchor pages until we have enough rows.
+  let nextPage = activeBaselineGenres.length >= 2 ? 6 : 11;
+  while (allMovies.length < DEEP_POOL_MAX && nextPage <= 60) {
+    const extra = await fetchDiscoverRaw(
       apiKey,
-      { ...discoverBase, sortBy: 'vote_average.desc' },
-      genreJoinMode
+      { ...anchorBase, genreJoinMode },
+      nextPage
     );
-    allMovies = mergeDiscoverRowsById(allMovies, cultRows);
+    allMovies = dedupeDiscoverRows([...allMovies, ...(extra.results ?? [])]);
+    nextPage += 1;
   }
 
-  allMovies = dedupeDiscoverRows(allMovies).slice(0, DEEP_POOL_MAX);
+  console.log('[Discover] Warehouse baseline pool', {
+    genres: activeBaselineGenres,
+    decade: baseParams.decade,
+    genreJoinMode,
+    totalRows: allMovies.length,
+  });
 
-  // --- (2) Enrich the capped pool only (≤100): movie/{id}?append_to_response=keywords,videos + credits ---
+  // Enrich full baseline pool; vibe only affects local rank, never deletion.
   const enrichedPool = await enrichDiscoverPool(apiKey, allMovies);
 
-  // --- (3) Taste/vibe filter + local **Top Rated** sort (critic + audience blend) → ≤100 for client cache ---
-  const ranked = filterMovies(enrichedPool, filters, filterMoviesOpts);
-  const topRatedSorted = [...ranked].sort(
-    (a, b) => combinedTopRatedMatchScore(b) - combinedTopRatedMatchScore(a)
+  const hasMissingCore = (m: Movie): boolean => {
+    const missingPoster = !m.posterPath;
+    const missingRating = !Number.isFinite(m.rating);
+    const missingRelease = !(Number.isFinite(m.year) && (m.year ?? 0) > 0);
+    return missingPoster || missingRating || missingRelease;
+  };
+  const scored = enrichedPool.map((movie) => {
+    const baseScore = scoreMovieDeclarative(movie, filters);
+    const pacingHits = pacingMode == null ? 0 : countPacingHits(movie, pacingMode);
+    const pacingBoost = pacingMode != null ? pacingHits >= 3 ? 350 : pacingHits === 2 ? 200 : pacingHits === 1 ? 100 : 0 : 0;
+    const genreIds = movie.genreIds ?? [];
+    const primaryGenreMatchBoost = activeBaselineGenres.length > 0
+      ? activeBaselineGenres.reduce((acc, g) => {
+          const id = GENRE_NAME_TO_ID[g];
+          if (!id) return acc;
+          if (genreIds[0] === id) return acc + 400;   // primary genre match
+          if (genreIds.includes(id)) return acc + 20; // secondary genre match
+          return acc - 400;                            // genre not present at all
+        }, 0)
+      : 0;
+    const primaryGenrePenalty = activeBaselineGenres.length > 0
+      ? activeBaselineGenres.reduce((acc, g) => {
+          const id = GENRE_NAME_TO_ID[g];
+          if (!id) return acc;
+          if (genreIds.includes(id)) return acc;
+          return acc - 400;
+        }, 0)
+      : 0;
+    const pedigreeBoost = calculatePedigreeScore(movie, filters);
+    const qualityBuffer = (movie.rating ?? 0) * 5;
+    const missingDataPenalty = hasMissingCore(movie) ? 1000 : 0;
+    const totalScore =
+      qualityBuffer +
+      pacingBoost +
+      primaryGenreMatchBoost +
+      pedigreeBoost +
+      baseScore.finalVibeScore * 0.2 -
+      missingDataPenalty;
+    return {
+      movie,
+      score: baseScore,
+      pacingHits,
+      pacingBoost,
+      pedigreeBoost,
+      totalScore,
+      primaryGenreMatchBoost,
+      primaryGenrePenalty,
+    };
+  });
+  console.log(
+    '[PACING DEBUG]',
+    scored.slice(0, 30).map((s) => ({
+      title: s.movie.title,
+      pacingHits: s.pacingHits,
+      pacingBoost: s.pacingBoost,
+      overview: s.movie.overview?.slice(0, 80),
+    })),
   );
-  const pool = topRatedSorted.slice(0, DEEP_POOL_MAX);
-  for (const m of pool) {
-    const tr = combinedTopRatedMatchScore(m);
-    m.matchPercentage = Math.round(tr);
-    m.finalMatchScore = tr;
+  console.log('Total Pool Size:', scored.length);
+  const selectedGenreIds = activeBaselineGenres.map(g => GENRE_NAME_TO_ID[g]).filter((id): id is number => id != null);
+  const finalScored = scored.filter(s => {
+    if (selectedGenreIds.length === 0) return true;
+    const movieGenreIds = s.movie.genreIds ?? [];
+    return selectedGenreIds.some(id => movieGenreIds.includes(id));
+  }).sort((a, b) => b.totalScore - a.totalScore).slice(0, DEEP_POOL_MAX);
+
+  console.log('[Discover] Vibe resort (manifest weights)', {
+    ranked: enrichedPool.length,
+    returned: finalScored.length,
+    withActiveVibe: scored.some((s) => s.score.primaryMatches + s.score.secondaryMatches > 0),
+  });
+
+  const auditRows = finalScored.slice(0, 20).map(({ movie, score, totalScore, pacingBoost, pedigreeBoost, primaryGenreMatchBoost, primaryGenrePenalty }) => ({ Title: movie.title, Total: Math.round(totalScore), Quality: Math.round((movie.rating ?? 0) * 5), Pop: movie.popularity, GenreBoost: Math.round(primaryGenreMatchBoost), PrimaryGenre: movie.genreIds?.[0], Genres: movie.genreIds?.join(','), PrimaryPenalty: primaryGenrePenalty, Pri: score.primaryMatches, Sec: score.secondaryMatches }));
+  console.table(auditRows);
+
+  const pool = finalScored.map((x) => x.movie);
+  for (let i = 0; i < pool.length; i++) {
+    const m = pool[i]!;
+    const fs = finalScored[i]!.totalScore;
+    m.finalMatchScore = fs;
+    m.matchPercentage = Math.max(0, Math.min(100, Math.round(fs / 8)));
+    m.vibeDensityScore = finalScored[i]!.score.baseVibeScore;
   }
-  console.log('Total Movies Returned (100-movie Top Rated pool):', pool.length);
-  return pool;
+  const hasActiveVibe = AXES.some((axis) => filters[axis] != null) || activeBaselineGenres.length >= 2 || filters.aListCast != null || filters.directorProminence != null || filters.oscarFilter != null || filters.criticsVsFans != null;
+  const finalResults = hasActiveVibe ? await claudeRerank(pool, filters, apiKey) : pool.slice(0, 36);
+  console.log('Total Movies Returned (deep-review vibe pool):', finalResults.length);
+  return finalResults;
 }

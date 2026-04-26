@@ -35,15 +35,15 @@ export function calculateCustomRank(
   filters: FilterState,
   truthList: ProminenceTruthList = PROMINENCE_TRUTH_LIST
 ): number {
-  const castSlider = filters.aListCastAny ? 50 : filters.aListCast;
-  const directorSlider = filters.directorProminenceAny ? 50 : filters.directorProminence;
+  const castSlider = filters.aListCast === 'low' ? 20 : filters.aListCast === 'high' ? 90 : 50;
+  const directorSlider = filters.directorProminence === 'low' ? 20 : filters.directorProminence === 'high' ? 90 : 50;
   const { castMatch, directorMatch } = calculateProminenceScore(
     movie,
     { cast: castSlider, director: directorSlider },
     truthList
   );
-  const wCast = filters.aListCastAny ? 0 : 1;
-  const wDir = filters.directorProminenceAny ? 0 : 1;
+  const wCast = filters.aListCast == null ? 0 : 1;
+  const wDir = filters.directorProminence == null ? 0 : 1;
   const sum = wCast + wDir;
   if (sum === 0) return 50;
   return (wCast * castMatch + wDir * directorMatch) / sum;

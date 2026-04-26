@@ -447,6 +447,26 @@ export function calculateEnergyScore(movie: Movie, filters: FilterState): Energy
   ] as const;
 
   for (const [key, sliderVal] of dims) {
+    if (sliderVal == null) {
+      axes.push({
+        axis: key,
+        sliderVal: 50,
+        intensity: 0,
+        highHits: 0,
+        lowHits: 0,
+        highIntent: false,
+        lowIntent: false,
+        anchorBonus: 0,
+        protagonistBonus: 0,
+        antagonistConflictHits: 0,
+        antagonistConflictPenalty: 0,
+        metadataPenalty: 0,
+        metadataBonus: 0,
+        penalty: 0,
+        bonus: 0,
+      });
+      continue;
+    }
     const intensity = sliderIntensity(sliderVal);
     const { high, low } = VIBE_EXTREME_MAP[key];
     const highHits = countExtremeKeywordHits(kw, high);

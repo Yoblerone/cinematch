@@ -100,6 +100,13 @@ export interface Movie {
   /** TMDB poster_path (e.g. "/abc.jpg"); build URL with https://image.tmdb.org/t/p/w500{posterPath} */
   posterPath?: string | null;
   crowd: CrowdType[];
+  narrative_pacing?: number;
+  emotional_tone?: number;
+  brain_power?: number;
+  visual_style?: number;
+  suspense_level?: number;
+  world_style?: number;
+  /** Legacy aliases kept for compatibility while the new intensity model rolls out. */
   pacing: number;
   intensity: number;
   cryMeter: number;
@@ -109,6 +116,8 @@ export interface Movie {
   genre: Genre[];
   /** TMDB `genre_ids` when available — used for perfect multi-genre match scoring. */
   genreIds?: number[];
+  /** TMDB plot summary when available — thematic density keyword scan. */
+  overview?: string | null;
   /** TMDB keyword names from movie details (append_to_response=keywords) — vibe scoring. */
   keywordNames?: string[];
   theme: Theme[];
@@ -119,8 +128,6 @@ export interface Movie {
   /** TMDB `vote_average` (0–10), same scale as TMDB website. */
   rating: number;
   hasAListCast: boolean;
-  /** Prestige display score for top-billed cast at “icons” calibration (0–100); not raw TMDB popularity. */
-  starPowerScore?: number;
   criticsVsFans: CriticsVsFans;
   oscarWinner: boolean;
   oscarNominee: boolean;
@@ -154,6 +161,10 @@ export interface Movie {
   matchPercentage?: number;
   /** Internal final rank score used for ordering before formatting to percentage. */
   finalMatchScore?: number;
+  /** Aggregate thematic density (overview/tagline/keywords clusters × energy intents). */
+  vibeDensityScore?: number;
+  /** Set when the row was added by Claude rerank + TMDB search, not the original discover pool. */
+  claudeSuggested?: boolean;
 }
 
 /** Max genres user can select (TMDB discover uses AND for multiple). */
@@ -161,22 +172,24 @@ export const MAX_GENRES = 3;
 
 export interface FilterState {
   crowd: CrowdType | null;
-  pacing: number;
-  intensity: number;
-  cryMeter: number;
-  humor: number;
-  romance: number;
-  suspense: number;
+  /** Null = Neutral-Off (axis ignored for TMDB seed + vibe scoring). */
+  narrative_pacing: number | null;
+  emotional_tone: number | null;
+  brain_power: number | null;
+  visual_style: number | null;
+  suspense_level: number | null;
+  world_style: number | null;
+  /** Legacy aliases kept for compatibility while the new intensity model rolls out. Null = Off. */
+  pacing: number | null;
+  intensity: number | null;
+  cryMeter: number | null;
+  humor: number | null;
+  romance: number | null;
+  suspense: number | null;
   /** Up to MAX_GENRES; empty = any. Multiple genres = AND (must match all). */
   genre: Genre[];
-  theme: Theme[];
-  visualStyle: VisualStyle[];
-  soundtrack: Soundtrack[];
-  cultClassic: boolean | null;
-  /** When true, star power is ignored (slider disabled). When false, aListCast 0–100 ranks by star power. */
-  aListCastAny: boolean;
-  /** 0–100; only used when aListCastAny is false. 100 = highest star power first, 0 = lowest (indie ensembles) first. */
-  aListCast: number;
+  /** Null = Off (ignored). */
+  aListCast: 'low' | 'high' | null;
   criticsVsFans: CriticsVsFans | null;
   /**
    * Best Picture (Academy Awards) filter.
@@ -185,35 +198,33 @@ export interface FilterState {
    * - `both`: winners + nominees
    * - `any`: no Best Picture filtering
    */
-  oscarFilter: 'any' | 'nominee' | 'winner' | 'both';
+  oscarFilter: 'nominee' | 'winner' | 'both' | null;
   /** Multiple decades; empty = any. Date range spans min–max. */
   decade: Decade[];
   runtime: Runtime;
-  /** When true, prominence is ignored (slider disabled). When false, directorProminence 0–100 is used for API and ranking. */
-  directorProminenceAny: boolean;
-  /** 0–100; only used when directorProminenceAny is false. */
-  directorProminence: number;
+  /** Null = Off (ignored). */
+  directorProminence: 'low' | 'high' | null;
 }
 
 export const defaultFilters: FilterState = {
   crowd: null,
-  pacing: 50,
-  intensity: 50,
-  cryMeter: 50,
-  humor: 50,
-  romance: 50,
-  suspense: 50,
+  narrative_pacing: null,
+  emotional_tone: null,
+  brain_power: null,
+  visual_style: null,
+  suspense_level: null,
+  world_style: null,
+  pacing: null,
+  intensity: null,
+  cryMeter: null,
+  humor: null,
+  romance: null,
+  suspense: null,
   genre: [],
-  theme: [],
-  visualStyle: [],
-  soundtrack: [],
-  cultClassic: null,
-  aListCastAny: true,
-  aListCast: 50,
+  aListCast: null,
   criticsVsFans: null,
-  oscarFilter: 'any',
+  oscarFilter: null,
   decade: [],
   runtime: null,
-  directorProminenceAny: true,
-  directorProminence: 50,
+  directorProminence: null,
 };

@@ -24,8 +24,8 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`h-full overflow-hidden ${playfair.variable} ${dmSans.variable}`}>
-      <body className="font-sans antialiased bg-cherry-950 text-[#f5e6e8] h-[100dvh] max-h-[100dvh] min-h-0 flex flex-col overflow-hidden">
-        <div className="flex h-screen max-h-screen min-h-0 flex-1 flex-col overflow-hidden border-2 border-double border-brass/80">
+      <body className="font-sans antialiased bg-cherry-950 text-[#f5e6e8] flex h-full min-h-0 flex-col overflow-hidden">
+        <div className="flex min-h-0 h-full w-full flex-1 flex-col overflow-hidden border-2 border-double border-brass/80">
           {children}
         </div>
       </body>

@@ -17,6 +17,7 @@ interface MovieCardProps {
 
 export default function MovieCard({ movie, index, variant = 'compact', matchPercent }: MovieCardProps) {
   const isFeatured = variant === 'featured';
+  const ratingN = Number(movie.rating ?? 0);
   const posterUrl = movie.posterPath
     ? `${TMDB_IMAGE_BASE}/${isFeatured ? 'w500' : 'w342'}${movie.posterPath}`
     : null;
@@ -58,13 +59,13 @@ export default function MovieCard({ movie, index, variant = 'compact', matchPerc
           </h3>
           <div
             className="flex flex-col items-end gap-0.5 shrink-0 text-neon-gold"
-            title={`TMDB rating: ${movie.rating.toFixed(1)} / 10 (vote_average)`}
+            title={`TMDB rating: ${Number.isFinite(ratingN) ? ratingN.toFixed(1) : '—'} / 10 (vote_average)`}
           >
             <div className="flex items-center gap-1">
               <Star className={isFeatured ? 'w-5 h-5' : 'w-4 h-4'} fill="currentColor" aria-hidden />
               <span className={`font-semibold tabular-nums ${isFeatured ? 'text-lg' : 'text-sm'}`}>
-                {movie.rating > 0 ? movie.rating.toFixed(1) : '—'}
-                {movie.rating > 0 && (
+                {ratingN > 0 ? ratingN.toFixed(1) : '—'}
+                {ratingN > 0 && (
                   <span
                     className={`text-cream/90 font-normal opacity-80 ${isFeatured ? 'text-sm' : 'text-[10px]'}`}
                   >

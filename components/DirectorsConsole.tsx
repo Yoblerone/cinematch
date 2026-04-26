@@ -2,19 +2,20 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { SlidersHorizontal, X, Plus, Minus, RotateCcw, Film, Zap, Palette, Award } from 'lucide-react';
-import type { FilterState, VisualStyle, Soundtrack, Genre, Theme, CriticsVsFans, Decade, Runtime } from '@/lib/types';
+import { SlidersHorizontal, X, Plus, Minus, RotateCcw, Film, Zap, Award, Trophy, ThumbsUp } from 'lucide-react';
+import type { FilterState, Genre, CriticsVsFans, Decade, Runtime } from '@/lib/types';
 import { MAX_GENRES } from '@/lib/types';
-import { ALL_VISUAL_STYLE_OPTIONS, ALL_SOUNDTRACK_OPTIONS, ALL_THEME_OPTIONS, GENRE_OPTIONS } from '@/lib/optionSets';
+import { GENRE_OPTIONS } from '@/lib/optionSets';
+import { FILTER_WEIGHT_LOW } from '@/lib/filterWeightSegments';
 import EnergySliderRow from '@/components/wizard/EnergySliderRow';
-import SteppedRangeTrack from '@/components/wizard/SteppedRangeTrack';
 
 const SLIDER_CONFIG = [
-  { key: 'pacing' as const, label: 'Pacing' },
-  { key: 'cryMeter' as const, label: 'Cry Meter' },
-  { key: 'humor' as const, label: 'Humor' },
-  { key: 'romance' as const, label: 'Romance' },
-  { key: 'suspense' as const, label: 'Suspense' },
+  { key: 'narrative_pacing' as const, label: 'Narrative Pacing', optionLabels: { low: 'Slow', high: 'Fast' } },
+  { key: 'emotional_tone' as const, label: 'Emotional Tone', optionLabels: { low: 'Light', high: 'Heavy' } },
+  { key: 'brain_power' as const, label: 'Brain Power', optionLabels: { low: 'Low', high: 'High' } },
+  { key: 'visual_style' as const, label: 'Visual Style', optionLabels: { low: 'Intimate', mid: 'Cinematic', high: 'Epic' } },
+  { key: 'suspense_level' as const, label: 'Suspense Level', optionLabels: { low: 'Relaxed', high: 'Tense' } },
+  { key: 'world_style' as const, label: 'World Style', optionLabels: { low: 'Grounded', mid: 'Stylized', high: 'Surreal' } },
 ] as const;
 
 const PREVIEW_COUNT = 3;
@@ -121,11 +122,10 @@ export default function DirectorsConsole({
   onClearSelections,
   liftFabAbovePagination = false,
 }: DirectorsConsoleProps) {
+  const pedigreeChipBase =
+    'flex-1 min-w-0 basis-0 min-h-[44px] rounded-sm border-2 text-sm font-medium transition-all duration-300 touch-manipulation px-3 py-2 flex items-center justify-center text-center';
   const [open, setOpen] = useState(false);
   const [expandedGenre, setExpandedGenre] = useState(false);
-  const [expandedTheme, setExpandedTheme] = useState(false);
-  const [expandedVisual, setExpandedVisual] = useState(false);
-  const [expandedSoundtrack, setExpandedSoundtrack] = useState(false);
 
   const openModal = () => {
     setOpen(true);
@@ -299,175 +299,210 @@ export default function DirectorsConsole({
                   {/* Energy & emotion – sliders affect ranking only; closer match = higher in results */}
                   <Section title="Energy & emotion" icon={Zap}>
                     <div className="grid sm:grid-cols-2 gap-4">
-                  {SLIDER_CONFIG.map(({ key, label }) => (
+                  {SLIDER_CONFIG.map(({ key, label, optionLabels }) => (
                     <EnergySliderRow
                       key={key}
                       label={label}
+                      optionLabels={optionLabels}
                       value={filters[key]}
+                      active={filters[key] != null}
+                      onToggleActive={(active) =>
+                        onUpdate({ [key]: active ? (key === 'narrative_pacing' ? FILTER_WEIGHT_LOW : 50) : null })
+                      }
                       onChange={(v) => onUpdate({ [key]: v })}
+                      density="responsive"
+                      variant={
+                        key === 'narrative_pacing' ||
+                        key === 'emotional_tone' ||
+                        key === 'brain_power' ||
+                        key === 'suspense_level'
+                          ? 'pacingBinary'
+                          : 'default'
+                      }
                     />
                   ))}
                     </div>
                   </Section>
 
-                  {/* Aesthetic */}
-                  <Section title="Aesthetic" icon={Palette}>
-                    <div className="grid sm:grid-cols-2 gap-4">
-                  <ChipRow
-                    options={ALL_THEME_OPTIONS}
-                    selectedSet={filters.theme}
-                    onToggle={(t) =>
-                      onUpdate({
-                        theme: filters.theme.includes(t)
-                          ? filters.theme.filter((x) => x !== t)
-                          : [...filters.theme, t],
-                      })
-                    }
-                    expanded={expandedTheme}
-                    onExpandToggle={() => setExpandedTheme((e) => !e)}
-                    label="Theme / Mood"
-                  />
-
-                  {/* Visual Style – first 3 + expand */}
-                  <ChipRow
-                    options={ALL_VISUAL_STYLE_OPTIONS}
-                    selectedSet={filters.visualStyle}
-                    onToggle={(v) =>
-                      onUpdate({
-                        visualStyle: filters.visualStyle.includes(v)
-                          ? filters.visualStyle.filter((x) => x !== v)
-                          : [...filters.visualStyle, v],
-                      })
-                    }
-                    expanded={expandedVisual}
-                    onExpandToggle={() => setExpandedVisual((e) => !e)}
-                    label="Visual Style"
-                  />
-
-                  {/* Soundtrack – first 3 + expand */}
-                  <ChipRow
-                    options={ALL_SOUNDTRACK_OPTIONS}
-                    selectedSet={filters.soundtrack}
-                    onToggle={(s) =>
-                      onUpdate({
-                        soundtrack: filters.soundtrack.includes(s)
-                          ? filters.soundtrack.filter((x) => x !== s)
-                          : [...filters.soundtrack, s],
-                      })
-                    }
-                    expanded={expandedSoundtrack}
-                    onExpandToggle={() => setExpandedSoundtrack((e) => !e)}
-                    label="Sound Profile"
-                  />
-                    </div>
-                  </Section>
-
-                  {/* Pedigree: sliders stacked vertically, matching Step 2 styling */}
-                  <Section title="Pedigree" icon={Award}>
-                    <div className="space-y-4">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-medium text-brass-light text-sm">Star Power</span>
-                        <label className="flex items-center gap-1.5 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={filters.aListCastAny}
-                            onChange={(e) => {
-                              const checked = e.target.checked;
-                              onUpdate(checked ? { aListCastAny: true, aListCast: 50 } : { aListCastAny: false });
-                            }}
-                            className="rounded border-brass/50 bg-cherry-900 accent-[#B8860B] focus:ring-brass focus:ring-offset-cherry-900"
-                          />
-                          <span className="text-cream text-sm">Any</span>
-                        </label>
+                  <Section title="Pedigree & accolades" icon={Award}>
+                    <div className="space-y-6">
+                      <div
+                        className={`space-y-2 transition-all duration-200 ${
+                          filters.aListCast == null ? 'stage-light-off' : 'stage-light-on'
+                        }`}
+                      >
+                        <div className="text-center">
+                          <div className="inline-flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={filters.aListCast != null}
+                              aria-label="Toggle Star Power"
+                              onClick={() => onUpdate({ aListCast: filters.aListCast == null ? 'high' : null })}
+                              className={`filament-switch ${filters.aListCast != null ? 'filament-switch--on' : 'filament-switch--off'}`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => onUpdate({ aListCast: filters.aListCast == null ? 'high' : null })}
+                              className={`bg-transparent p-0 text-sm font-medium ${filters.aListCast != null ? 'filament-label-on text-[#FFD700]' : 'text-brass-light'}`}
+                              aria-label="Toggle Star Power"
+                            >
+                              Star Power
+                            </button>
+                          </div>
+                        </div>
+                        <div className={filters.aListCast == null ? 'stage-control-off pointer-events-none' : ''}>
+                          <div className="flex gap-2" role="radiogroup" aria-label="Star power level">
+                            {(['low', 'high'] as const).map((opt) => (
+                              <button
+                                key={opt}
+                                type="button"
+                                role="radio"
+                                aria-checked={filters.aListCast === opt}
+                                onClick={() => onUpdate({ aListCast: opt })}
+                                className={`${pedigreeChipBase} ${
+                                  filters.aListCast === opt
+                                    ? 'border-brass bg-brass/15 text-neon-gold shadow-[0_0_20px_rgba(184,134,11,0.4)]'
+                                    : 'border-brass/50 bg-transparent text-cream hover:border-brass hover:text-brass-light'
+                                }`}
+                              >
+                                {opt === 'low' ? 'Low' : 'High'}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
                       </div>
-                      <span className="text-cream text-sm tabular-nums">{filters.aListCastAny ? '—' : filters.aListCast}</span>
-                    </div>
-                    <SteppedRangeTrack
-                      value={filters.aListCast}
-                      onChange={(v) => onUpdate({ aListCast: v })}
-                      disabled={filters.aListCastAny}
-                    />
-                    <div className="flex justify-between text-xs text-cream">
-                      <span>Indie ensembles</span>
-                      <span>Star power</span>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-medium text-brass-light text-sm">Director prominence</span>
-                        <label className="flex items-center gap-1.5 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={filters.directorProminenceAny}
-                            onChange={(e) => {
-                              const checked = e.target.checked;
-                              onUpdate(
-                                checked
-                                  ? { directorProminenceAny: true, directorProminence: 50 }
-                                  : { directorProminenceAny: false }
-                              );
-                            }}
-                            className="rounded border-brass/50 bg-cherry-900 accent-[#B8860B] focus:ring-brass focus:ring-offset-cherry-900"
-                          />
-                          <span className="text-cream text-sm">Any</span>
-                        </label>
+                      <div className={`space-y-2 transition-all duration-200 ${filters.directorProminence == null ? 'stage-light-off' : 'stage-light-on'}`}>
+                        <div className="text-center">
+                          <div className="inline-flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={filters.directorProminence != null}
+                              aria-label="Toggle Director prominence"
+                              onClick={() =>
+                                onUpdate({ directorProminence: filters.directorProminence == null ? 'high' : null })
+                              }
+                              className={`filament-switch ${
+                                filters.directorProminence != null ? 'filament-switch--on' : 'filament-switch--off'
+                              }`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onUpdate({ directorProminence: filters.directorProminence == null ? 'high' : null })
+                              }
+                              className={`bg-transparent p-0 text-sm font-medium ${filters.directorProminence != null ? 'filament-label-on text-[#FFD700]' : 'text-brass-light'}`}
+                              aria-label="Toggle Director prominence"
+                            >
+                              Director prominence
+                            </button>
+                          </div>
+                        </div>
+                        <div className={filters.directorProminence == null ? 'stage-control-off pointer-events-none' : ''}>
+                          <div className="flex gap-2" role="radiogroup" aria-label="Director prominence level">
+                            {(['low', 'high'] as const).map((opt) => (
+                              <button
+                                key={opt}
+                                type="button"
+                                role="radio"
+                                aria-checked={filters.directorProminence === opt}
+                                onClick={() => onUpdate({ directorProminence: opt })}
+                                className={`${pedigreeChipBase} ${
+                                  filters.directorProminence === opt
+                                    ? 'border-brass bg-brass/15 text-neon-gold shadow-[0_0_20px_rgba(184,134,11,0.4)]'
+                                    : 'border-brass/50 bg-transparent text-cream hover:border-brass hover:text-brass-light'
+                                }`}
+                              >
+                                {opt === 'low' ? 'Low' : 'High'}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
                       </div>
-                      <span className="text-cream text-sm tabular-nums">{filters.directorProminenceAny ? '—' : filters.directorProminence}</span>
-                    </div>
-                    <SteppedRangeTrack
-                      value={filters.directorProminence}
-                      onChange={(v) => onUpdate({ directorProminence: v })}
-                      disabled={filters.directorProminenceAny}
-                    />
-                    <div className="flex justify-between text-xs text-cream">
-                      <span>Indie</span>
-                      <span>Household names</span>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-brass-light mb-2">Academy Awards</label>
-                    <p className="text-xs text-cream mb-2">Best Picture only. Pick one: Any, Nominee, Winner, or Both (winners + nominees).</p>
-                    <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Academy Award Best Picture filter">
-                      {(['any', 'nominee', 'winner', 'both'] as const).map((opt) => (
-                        <button
-                          key={opt}
-                          type="button"
-                          role="radio"
-                          aria-checked={filters.oscarFilter === opt}
-                          onClick={() => onUpdate({ oscarFilter: opt })}
-                          className={`px-3 py-1.5 rounded-sm border-2 text-sm transition-all duration-300 ${
-                            filters.oscarFilter === opt ? 'border-brass bg-brass/15 text-neon-gold shadow-[0_0_20px_rgba(184,134,11,0.4)]' : 'border-brass/50 text-cream hover:border-brass hover:text-brass-light'
-                          }`}
-                        >
-                          {opt === 'any' ? 'Any' : opt === 'nominee' ? 'Nominee' : opt === 'winner' ? 'Winner' : 'Both'}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-brass-light mb-2">Critics vs. Fans</label>
-                    <div className="flex flex-wrap gap-2">
-                      {(['any', 'critics', 'fans', 'both'] as const).map((opt) => {
-                        const v = opt === 'any' ? null : (opt as CriticsVsFans);
-                        const selected = filters.criticsVsFans === v;
-                        return (
+                      <div className={`space-y-2 transition-all duration-200 ${filters.oscarFilter == null ? 'stage-light-off' : 'stage-light-on'}`}>
+                        <div className="flex items-center justify-center gap-2">
+                          <Trophy className="w-5 h-5" />
                           <button
-                            key={opt}
                             type="button"
-                            onClick={() => onUpdate({ criticsVsFans: v })}
-                            className={`px-3 py-1.5 rounded-sm border-2 text-sm transition-all duration-300 ${
-                              selected ? 'border-brass bg-brass/15 text-neon-gold shadow-[0_0_20px_rgba(184,134,11,0.4)]' : 'border-brass/50 text-cream hover:border-brass hover:text-brass-light'
-                            }`}
+                            role="switch"
+                            aria-checked={filters.oscarFilter != null}
+                            aria-label="Toggle Best Picture filter"
+                            onClick={() => onUpdate({ oscarFilter: filters.oscarFilter == null ? 'both' : null })}
+                            className={`filament-switch ${filters.oscarFilter != null ? 'filament-switch--on' : 'filament-switch--off'}`}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => onUpdate({ oscarFilter: filters.oscarFilter == null ? 'both' : null })}
+                            className={`block bg-transparent p-0 text-sm font-medium ${filters.oscarFilter != null ? 'filament-label-on text-[#FFD700]' : 'text-brass-light'}`}
+                            aria-label="Toggle Best Picture filter"
                           >
-                            {opt === 'any' ? 'Any' : opt === 'both' ? 'Top Rated' : opt === 'critics' ? 'Critics' : 'Fans'}
+                            Best Picture
                           </button>
-                        );
-                      })}
-                    </div>
-                  </div>
+                        </div>
+                        <div className={filters.oscarFilter == null ? 'pointer-events-none stage-control-off' : ''}>
+                          <div className="flex gap-2" role="radiogroup" aria-label="Academy Award Best Picture filter">
+                            {(['nominee', 'winner', 'both'] as const).map((opt) => (
+                              <button
+                                key={opt}
+                                type="button"
+                                role="radio"
+                                aria-checked={filters.oscarFilter === opt}
+                                onClick={() => onUpdate({ oscarFilter: opt })}
+                                className={`${pedigreeChipBase} ${
+                                  filters.oscarFilter === opt
+                                    ? 'border-brass bg-brass/15 text-neon-gold shadow-[0_0_20px_rgba(184,134,11,0.4)]'
+                                    : 'border-brass/50 bg-transparent text-cream hover:border-brass hover:text-brass-light'
+                                }`}
+                              >
+                                {opt === 'nominee' ? 'Nominee' : opt === 'winner' ? 'Winner' : 'Both'}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                      <div className={`space-y-2 transition-all duration-200 ${filters.criticsVsFans == null ? 'stage-light-off' : 'stage-light-on'}`}>
+                        <div className="flex items-center justify-center gap-2">
+                          <ThumbsUp className="w-5 h-5 text-brass-light" />
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={filters.criticsVsFans != null}
+                            aria-label="Toggle Critics vs. Fans filter"
+                            onClick={() => onUpdate({ criticsVsFans: filters.criticsVsFans == null ? 'both' : null })}
+                            className={`filament-switch ${filters.criticsVsFans != null ? 'filament-switch--on' : 'filament-switch--off'}`}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => onUpdate({ criticsVsFans: filters.criticsVsFans == null ? 'both' : null })}
+                            className={`block bg-transparent p-0 text-sm font-medium ${filters.criticsVsFans != null ? 'filament-label-on text-[#FFD700]' : 'text-brass-light'}`}
+                            aria-label="Toggle Critics vs. Fans filter"
+                          >
+                            Critics vs. Fans
+                          </button>
+                        </div>
+                        <div className={filters.criticsVsFans == null ? 'pointer-events-none stage-control-off' : ''}>
+                          <div className="flex gap-2">
+                          {(['critics', 'fans', 'both'] as const).map((opt) => {
+                            const selected = filters.criticsVsFans === opt;
+                            return (
+                              <button
+                                key={opt}
+                                type="button"
+                                onClick={() => onUpdate({ criticsVsFans: opt })}
+                                className={`${pedigreeChipBase} ${
+                                  selected
+                                    ? 'border-brass bg-brass/15 text-neon-gold shadow-[0_0_20px_rgba(184,134,11,0.4)]'
+                                    : 'border-brass/50 bg-transparent text-cream hover:border-brass hover:text-brass-light'
+                                }`}
+                              >
+                                {opt === 'both' ? 'Top Rated' : opt === 'critics' ? 'Critics' : 'Fans'}
+                              </button>
+                            );
+                          })}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </Section>
                 </div>

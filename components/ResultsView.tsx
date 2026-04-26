@@ -106,7 +106,7 @@ export default function ResultsView({
         ? `1–${results.length}`
         : `${start + 1}–${Math.min(start + RESULTS_PAGE_SIZE, results.length)} of ${results.length}`;
 
-  const hasOsarFilter = filters.oscarFilter !== 'any';
+  const hasOsarFilter = filters.oscarFilter != null;
   const hasSecondaryFilter = filters.genre.length > 0 || filters.decade.length > 0 || filters.runtime != null;
   const shouldShowMatchPercent = !hasOsarFilter || hasSecondaryFilter;
 
@@ -171,7 +171,9 @@ export default function ResultsView({
             <div className="rounded-xl border-2 border-amber-500/50 bg-cherry-900 p-4">
               <p className="font-medium text-amber-400">Couldn’t load matches</p>
               <p className="mt-1 text-sm text-antique">{error}</p>
-              <p className="mt-2 text-sm text-antique/90">Check TMDB_API_KEY in .env.local and try again.</p>
+              {error.includes('TMDB_API_KEY') && (
+                <p className="mt-2 text-sm text-antique/90">Check TMDB_API_KEY in .env.local and try again.</p>
+              )}
             </div>
           </div>
         )}

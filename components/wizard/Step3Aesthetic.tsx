@@ -215,7 +215,7 @@ export default function Step3Aesthetic({
           The Aesthetic
         </h2>
       </div>
-      <div className="scroll-area-slate space-y-6 max-w-3xl mx-auto max-h-[65vh] overflow-y-auto">
+      <div className="space-y-6 max-w-3xl mx-auto">
         <div className="space-y-3">
           <div className="flex items-center gap-2 text-brass-light">
             <Film className="w-5 h-5" />

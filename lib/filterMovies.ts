@@ -1,4 +1,5 @@
 import type { Movie, FilterState } from './types';
+import { FILTER_WEIGHT_MED, nearestFilterWeightStop } from './filterWeightSegments';
 import {
   combinedTopRatedMatchScore,
   criticsFansMultiplier,
@@ -12,6 +13,12 @@ import {
   listMatchedPhrases,
   VIBE_CONFLICT_MAP,
 } from './vibeScore';
+import {
+  applyThematicDensityGate,
+  hasNonNeutralEnergyFilters,
+  logThematicDensityTopFive,
+} from './scoring/thematicDensity';
+import { applyPacingElasticRerank } from './scoring/pacingElastic';
 
 /** Critics/fans applied last on a 0–100 normalized scale (metadata order: genre → penalties → bonuses → CF). */
 const CRITICS_FANS_WEIGHT = 0.42;
@@ -90,20 +97,9 @@ function runtimeMatch(runtimeMinutes: number, runtime: FilterState['runtime']): 
 
 /** Cumulative atmosphere score: +100 per selected tag that matches (Cult Classic can match by budget/revenue/year). */
 function atmosphereScore(movie: Movie, filters: FilterState): number {
-  let total = 0;
-  for (const t of filters.theme) {
-    const match =
-      movie.theme.includes(t) ||
-      (t === 'Cult Classic' && isCultClassicByNumbers(movie));
-    if (match) total += ATMOSPHERE_POINTS_PER_TAG;
-  }
-  for (const vs of filters.visualStyle) {
-    if (movie.visualStyle.includes(vs)) total += ATMOSPHERE_POINTS_PER_TAG;
-  }
-  for (const st of filters.soundtrack) {
-    if (movie.soundtrack.includes(st)) total += ATMOSPHERE_POINTS_PER_TAG;
-  }
-  return total;
+  void movie;
+  void filters;
+  return 0;
 }
 
 /** True when the movie’s TMDB `genre_ids` include every selected genre id (preferred), else name fallback. */
@@ -154,12 +150,6 @@ export function scoreMovieTasteNonVibe(movie: Movie, filters: FilterState): numb
   }
   if (filters.decade.length > 0 && decadeMatch(movie.year, filters.decade)) score += 1;
   if (filters.runtime != null && runtimeMatch(movie.runtimeMinutes, filters.runtime)) score += 1;
-  if (filters.cultClassic === true && hasCultSignature(movie)) {
-    const pop = (movie.popularity ?? 0) + 1;
-    const boxOffice = movie.boxOffice + 1;
-    const gap = Math.log(pop) * (movie.budget > 0 ? Math.min(10, movie.budget / boxOffice) : 1);
-    score += Math.min(8, gap);
-  }
   return score;
 }
 
@@ -186,8 +176,9 @@ function scoreCriticsFansForMatch(movie: Movie, filters: FilterState): number {
 export function scoreMovieTaste(movie: Movie, filters: FilterState): number {
   let score = scoreMovieTasteNonVibe(movie, filters);
   for (const key of ['pacing', 'cryMeter', 'humor', 'romance', 'suspense'] as const) {
-    if (inBand(movie[key], filters[key])) score += 1;
-    score += (30 - Math.min(Math.abs(movie[key] - filters[key]), 30)) / 30;
+    const fv = filters[key] ?? 50;
+    if (inBand(movie[key], fv)) score += 1;
+    score += (30 - Math.min(Math.abs(movie[key] - fv), 30)) / 30;
   }
   return score;
 }
@@ -200,6 +191,8 @@ export type FilterMoviesOptions = {
   genreFilterMode?: 'all' | 'any';
   /** @deprecated No-op — max-slider keyword trim removed; kept for call-site compatibility. */
   skipMaxSliderVibeTrim?: boolean;
+  /** Declarative engine path: skip legacy thematic gate and let caller handle strict/soft selection. */
+  skipThematicDensityGate?: boolean;
 };
 
 export function filterMovies(
@@ -215,16 +208,15 @@ export function filterMovies(
         if (!filters.genre.some((g) => movie.genre.includes(g))) return false;
       } else if (!filters.genre.every((g) => movie.genre.includes(g))) return false;
     }
-    const cult = hasCultSignature(movie);
-    if (filters.cultClassic === true && !cult) return false;
-    if (filters.cultClassic === false && cult) return false;
     if (filters.decade.length > 0 && !decadeMatch(movie.year, filters.decade)) return false;
     if (filters.runtime != null && !runtimeMatch(movie.runtimeMinutes, filters.runtime)) return false;
     return true;
   });
 
-  const genreRaws = filtered.map((m) => scoreGenreForMatch(m, filters));
-  const cfRaws = filtered.map((m) => scoreCriticsFansForMatch(m, filters));
+  const pool = options?.skipThematicDensityGate ? filtered : applyThematicDensityGate(filtered, filters);
+
+  const genreRaws = pool.map((m) => scoreGenreForMatch(m, filters));
+  const cfRaws = pool.map((m) => scoreCriticsFansForMatch(m, filters));
   const minC = cfRaws.length ? Math.min(...cfRaws) : 0;
   const maxC = cfRaws.length ? Math.max(...cfRaws) : 1;
   const cfNorm01 = (c: number) => (maxC === minC ? 0.5 : (c - minC) / (maxC - minC));
@@ -243,16 +235,16 @@ export function filterMovies(
    * Hierarchy: **Genre (base)** → **main plot** (anchor / protagonist / antagonist from `VIBE_CONFLICT_MAP`)
    * → **metadata** (`VIBE_EXTREME_MAP` nukes + fine-tuning) → **critics/fans** (weighted) → tie-break.
    */
-  const vibeRaws = filtered.map((m) => {
+  const vibeRaws = pool.map((m) => {
     const { penalties, bonuses } = calculateEnergyScore(m, filters);
     return penalties + bonuses;
   });
 
-  const customRaws = filtered.map((m) => calculateCustomRank(m, filters, PROMINENCE_TRUTH_LIST));
+  const customRaws = pool.map((m) => calculateCustomRank(m, filters, PROMINENCE_TRUTH_LIST));
   const prominenceWeight =
-    !filters.aListCastAny || !filters.directorProminenceAny ? 0.26 : 0;
+    filters.aListCast != null || filters.directorProminence != null ? 0.26 : 0;
 
-  const popQualityRaws = filtered.map((m, i) => {
+  const popQualityRaws = pool.map((m, i) => {
     const g = genreRaws[i]!;
     const c = cfRaws[i]!;
     const cfComponent = CRITICS_FANS_WEIGHT * cfNorm01(c) * 100;
@@ -270,7 +262,7 @@ export function filterMovies(
   const vibe01 = norm01(vibeRaws);
   const popQuality01 = norm01(popQualityRaws);
   const custom01 = norm01(customRaws);
-  const preScores = filtered.map((_, i) => {
+  const preScores = pool.map((_, i) => {
     const base = anySliderAt100
       ? EXTREME_VIBE_WEIGHT * vibe01[i]! + EXTREME_POP_QUALITY_WEIGHT * popQuality01[i]!
       : vibe01[i]! + popQuality01[i]!;
@@ -282,7 +274,7 @@ export function filterMovies(
   const maxP = preScores.length ? Math.max(...preScores) : 1;
   const spanP = maxP - minP;
 
-  const ranked = filtered.map((m, i) => {
+  const ranked = pool.map((m, i) => {
     const customRank = customRaws[i]!;
     m.customRank = customRank;
     const blend01 =
@@ -325,7 +317,7 @@ export function filterMovies(
 
     const top5 = rankedFiltered.slice(0, 5);
     const payload = top5.map(({ movie: m }, idx) => {
-      const gi = filtered.indexOf(m);
+      const gi = pool.indexOf(m);
       const g = gi >= 0 ? scoreGenreForMatch(m, filters) : 0;
       const c = gi >= 0 ? cfRaws[gi]! : 0;
       const cfComponent = CRITICS_FANS_WEIGHT * cfNorm01(c) * 100;
@@ -344,7 +336,7 @@ export function filterMovies(
     );
 
     /** Logic audit: Romance slider > 85 — antagonist hits (e.g. war) must apply −100 and sink war films. */
-    if (filters.romance > 85) {
+    if ((filters.romance ?? 50) > 85) {
       const romanceAnt = VIBE_CONFLICT_MAP.romance.antagonists;
       const top = ranked[0]?.movie;
       if (top) {
@@ -384,5 +376,24 @@ export function filterMovies(
     }
   }
 
-  return rankedFiltered.map((x) => x.movie);
+  let out = rankedFiltered.map((x) => x.movie);
+  out = applyPacingElasticRerank(out, filters);
+
+  /** Intensity-first order when any energy axis is Low/High (non-50); tie-break on blend score. */
+  const hasActiveBinaryPacing =
+    filters.narrative_pacing != null && nearestFilterWeightStop(filters.narrative_pacing) !== FILTER_WEIGHT_MED;
+  if (hasNonNeutralEnergyFilters(filters) && !hasActiveBinaryPacing) {
+    out = [...out].sort((a, b) => {
+      const dDens = (b.vibeDensityScore ?? 0) - (a.vibeDensityScore ?? 0);
+      if (Math.abs(dDens) > 1e-9) return dDens > 0 ? 1 : -1;
+      const dFinal = (b.finalMatchScore ?? 0) - (a.finalMatchScore ?? 0);
+      if (Math.abs(dFinal) > 1e-9) return dFinal > 0 ? 1 : -1;
+      return (b.matchPercentage ?? 0) - (a.matchPercentage ?? 0);
+    });
+  }
+
+  if (process.env.NODE_ENV !== 'production' || process.env.THEMATIC_DENSITY_AUDIT === '1') {
+    logThematicDensityTopFive(out, filters);
+  }
+  return out;
 }

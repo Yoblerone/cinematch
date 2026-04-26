@@ -78,7 +78,6 @@ export default function Step1Basics({
         <h2 className="text-3xl font-display font-semibold text-neon-gold text-neon-glow mb-2">
           The Basics
         </h2>
-        <p className="text-cream text-sm">Genre, era & length</p>
         {onResetStep && <StepResetButton onReset={onResetStep} />}
       </div>
 

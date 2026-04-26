@@ -1,93 +1,306 @@
 /**
- * Smart Harvest: maps Energy sliders → TMDB Discover **genre** augmentation only.
- * Vibe **keywords** are not sent to Discover — they are used in-app for ranking (`vibeScore` / `filterMovies`).
- * @see `lib/genreConflictMap.ts` for slider-100 `without_genres` exclusions.
+ * Smart Harvest: emotion axes → TMDB Discover (numeric keyword IDs, pipe = OR).
+ *
+ * - **0 (hard zero):** Absolute `without_genres` for that mood + `without_keywords`.
+ * - **1–20:** `without_keywords` only (soft block; genres not banned at API level).
+ * - **21–29:** Neutral — no with/without from that axis.
+ * - **30–79:** Genre bias only (no slider keyword OR).
+ * - **80–100:** Full single pipe `with_keywords` per axis (not stepped).
+ *
+ * TMDB requires keyword **IDs**; pipes are OR, never comma-AND.
+ * User genre selections are never placed in `without_genres`.
  */
 import type { FilterState } from './types';
 import { GENRE_NAME_TO_ID, type SmartHarvestQuerySlice } from './tmdb';
 import { getSlider100ConflictGenreIds } from './genreConflictMap';
 
-const SLIDER_HIGH = 80;
-const SLIDER_LOW = 20;
+const BLOCK_MAX = 20;
+const NEUTRAL_MAX = 29;
+const MID_MIN = 30;
+const MID_MAX = 79;
+const HIGH_MIN = 80;
 
-const ENERGY_AXES = ['pacing', 'cryMeter', 'humor', 'romance', 'suspense'] as const;
+const G = GENRE_NAME_TO_ID;
 
-export function buildSmartHarvestAugmentation(filters: FilterState): SmartHarvestQuerySlice {
-  const withoutGenres = new Set<number>();
-  /** Step threshold: snapped 0–20 triggers low-end exclusions. */
-  if (filters.romance <= SLIDER_LOW) withoutGenres.add(GENRE_NAME_TO_ID.Romance);
-  if (filters.humor <= SLIDER_LOW) withoutGenres.add(GENRE_NAME_TO_ID.Comedy);
-  for (const id of getSlider100ConflictGenreIds(filters)) withoutGenres.add(id);
-  /**
-   * User Wins rule: never veto genres explicitly selected in the UI.
-   * Example: Drama selected + Humor=100 should keep Drama in the fetch pool.
-   */
-  const selectedGenreIds = new Set<number>(
-    filters.genre.map((g) => GENRE_NAME_TO_ID[g]).filter((id): id is number => id != null)
-  );
-  for (const id of Array.from(selectedGenreIds)) withoutGenres.delete(id);
+/** Cry (80–100). */
+const KW_CRY = '11612|10683|31522|233157';
+/** Romance 80–100 — Star-crossed | True Love | Relationship (per product spec). */
+const KW_ROMANCE = '165086|14534|9840';
+/** Suspense (80–100). */
+const KW_SUSPENSE = '12565|314730|216521|18022';
+/** Energy (80–100). */
+const KW_ENERGY = '234505|232185|3149|18507';
+/** Whimsy (80–100). */
+const KW_WHIMSY = '283250|2343|156466|236400';
+/** Grit (80–100). */
+const KW_GRIT = '15011|3149|155457|242566';
 
-  let withGenresOr: string | undefined;
-  if (filters.genre.length === 0) {
-    const or = new Set<number>();
-    /** Sliders at 100 use primary anchors only (`withGenresSlider100Pipe`) — avoid duplicating / over-constraining. */
-    if (filters.romance > SLIDER_HIGH && filters.romance < 100) or.add(GENRE_NAME_TO_ID.Romance);
-    if (filters.humor > SLIDER_HIGH && filters.humor < 100) or.add(GENRE_NAME_TO_ID.Comedy);
-    if (filters.pacing > SLIDER_HIGH && filters.pacing < 100) {
-      or.add(GENRE_NAME_TO_ID.Action);
-      or.add(GENRE_NAME_TO_ID.Thriller);
-    }
-    if (filters.cryMeter > SLIDER_HIGH && filters.cryMeter < 100) or.add(GENRE_NAME_TO_ID.Drama);
-    if (filters.suspense > SLIDER_HIGH && filters.suspense < 100) {
-      or.add(GENRE_NAME_TO_ID.Thriller);
-      or.add(GENRE_NAME_TO_ID.Mystery);
-      or.add(GENRE_NAME_TO_ID.Horror);
-    }
-    if (or.size > 0) withGenresOr = Array.from(or).join('|');
-  }
+const KW_SIMBA_WITHOUT = '6054|210024';
 
-  const withGenresSlider100Pipe = buildSlider100PrimaryGenrePipe(filters);
+const SLIDER100_AXES = ['pacing', 'cryMeter', 'humor', 'romance', 'suspense', 'intensity'] as const;
 
-  return {
-    withKeywordIds: [],
-    withoutKeywordIds: [],
-    withGenresOr,
-    withGenresSlider100Pipe,
-    withoutGenres: withoutGenres.size > 0 ? Array.from(withoutGenres).join(',') : undefined,
-  };
+const SLIDER_100_PRIMARY_GENRE: Record<(typeof SLIDER100_AXES)[number], number> = {
+  pacing: G.Action,
+  cryMeter: G.Drama,
+  humor: G.Comedy,
+  romance: G.Romance,
+  suspense: G.Thriller,
+  intensity: G.Crime,
+};
+
+function sliderOn(v: number | null | undefined): boolean {
+  return v != null;
 }
 
-/**
- * One **primary** TMDB genre per Energy axis at slider 100 (big famous pool, e.g. Romance 10749).
- * Multi-axis at 100 → pipe-OR in discover when the user picked no UI genres.
- */
+function sliderValue(v: number | null | undefined): number {
+  return v ?? 50;
+}
+
+function isHardZero(v: number): boolean {
+  return v === 0;
+}
+function isSoftLow(v: number): boolean {
+  return v >= 1 && v <= BLOCK_MAX;
+}
+function inNeutralBand(v: number): boolean {
+  return v > BLOCK_MAX && v <= NEUTRAL_MAX;
+}
+function inMidGenreBand(v: number): boolean {
+  return v >= MID_MIN && v <= MID_MAX;
+}
+function inHighBand(v: number): boolean {
+  return v >= HIGH_MIN;
+}
+
+function mergeKeywordPipes(...parts: (string | undefined)[]): string | undefined {
+  const s = new Set<string>();
+  for (const p of parts) {
+    if (!p?.trim()) continue;
+    for (const x of p.split('|')) {
+      const t = x.trim();
+      if (t) s.add(t);
+    }
+  }
+  if (s.size === 0) return undefined;
+  return Array.from(s).join('|');
+}
+
 export function buildSlider100PrimaryGenrePipe(filters: FilterState): string | undefined {
-  const SLIDER_100_PRIMARY: Record<(typeof ENERGY_AXES)[number], number> = {
-    pacing: GENRE_NAME_TO_ID.Action,
-    cryMeter: GENRE_NAME_TO_ID.Drama,
-    humor: GENRE_NAME_TO_ID.Comedy,
-    romance: GENRE_NAME_TO_ID.Romance,
-    suspense: GENRE_NAME_TO_ID.Thriller,
-  };
   const ids = new Set<number>();
-  for (const ax of ENERGY_AXES) {
-    if (filters[ax] === 100) ids.add(SLIDER_100_PRIMARY[ax]);
+  for (const ax of SLIDER100_AXES) {
+    if (!sliderOn(filters[ax])) continue;
+    if (filters[ax] === 100) ids.add(SLIDER_100_PRIMARY_GENRE[ax]);
   }
   if (ids.size === 0) return undefined;
   return Array.from(ids).join('|');
 }
 
-/** @deprecated Use `buildSmartHarvestAugmentation(...).withGenresSlider100Pipe` — alias for logging / backup. */
 export function anchorGenreOrPipeForSlider100(filters: FilterState): string | undefined {
   return buildSlider100PrimaryGenrePipe(filters);
 }
 
 export function anyEnergySliderAt100(filters: FilterState): boolean {
-  return (
-    filters.pacing === 100 ||
-    filters.cryMeter === 100 ||
-    filters.humor === 100 ||
-    filters.romance === 100 ||
-    filters.suspense === 100
+  return SLIDER100_AXES.some((ax) => sliderOn(filters[ax]) && filters[ax] === 100);
+}
+
+/** Any emotion axis > 70 — used with `vote_average.desc` + vote floor on Discover. */
+export function anyEmotionSliderAbove70(filters: FilterState): boolean {
+  return SLIDER100_AXES.some((ax) => sliderOn(filters[ax]) && sliderValue(filters[ax]) > 70);
+}
+
+export function emptySmartHarvestSlice(): SmartHarvestQuerySlice {
+  return {
+    withKeywordIds: [],
+    withoutKeywordIds: [],
+  };
+}
+
+function buildGenrePrimaryHeadComma(filters: FilterState): string | undefined {
+  const head: number[] = [];
+  const push = (id: number) => {
+    if (!head.includes(id)) head.push(id);
+  };
+  if (sliderOn(filters.romance) && inHighBand(sliderValue(filters.romance))) push(G.Romance);
+  if (sliderOn(filters.cryMeter) && inHighBand(sliderValue(filters.cryMeter))) push(G.Drama);
+  if (sliderOn(filters.suspense) && inHighBand(sliderValue(filters.suspense))) push(G.Thriller);
+  if (sliderOn(filters.pacing) && inHighBand(sliderValue(filters.pacing))) push(G.Action);
+  if (sliderOn(filters.humor) && inHighBand(sliderValue(filters.humor))) push(G.Family);
+  if (sliderOn(filters.intensity) && inHighBand(sliderValue(filters.intensity))) push(G.Crime);
+  if (head.length === 0) return undefined;
+  return head.join(',');
+}
+
+export function buildSmartHarvestAugmentation(filters: FilterState): SmartHarvestQuerySlice {
+  const withoutGenreIds = new Set<number>();
+  const withKwHigh: string[] = [];
+  const withoutKwLow: string[] = [];
+  const withGenresOr = new Set<number>();
+  const withGenresAnd = new Set<number>();
+  let withRuntimeGte: number | undefined;
+  let withRuntimeLte: number | undefined;
+
+  const selectedGenreIds = new Set<number>(
+    filters.genre.map((g) => GENRE_NAME_TO_ID[g]).filter((id): id is number => id != null)
   );
+
+  const addHighKeywords = (pipe: string, v: number) => {
+    if (inHighBand(v)) withKwHigh.push(pipe);
+  };
+
+  // —— Cry ——
+  const cry = sliderValue(filters.cryMeter);
+  const pacing = sliderValue(filters.pacing);
+  const suspense = sliderValue(filters.suspense);
+  const humor = sliderValue(filters.humor);
+  const romance = sliderValue(filters.romance);
+  const intensity = sliderValue(filters.intensity);
+
+  if (sliderOn(filters.cryMeter) && isHardZero(cry)) {
+    withoutGenreIds.add(G.Drama);
+    withoutKwLow.push(KW_CRY);
+  } else if (sliderOn(filters.cryMeter) && isSoftLow(cry)) {
+    withoutKwLow.push(KW_CRY);
+  } else if (sliderOn(filters.cryMeter) && !inNeutralBand(cry)) {
+    if (inMidGenreBand(cry)) withGenresAnd.add(G.Drama);
+    if (inHighBand(cry)) {
+      withGenresAnd.add(G.Drama);
+      addHighKeywords(KW_CRY, cry);
+    }
+  }
+
+  // —— Energy / pacing ——
+  if (sliderOn(filters.pacing) && isHardZero(pacing)) {
+    withRuntimeGte = 120;
+    withoutGenreIds.add(G.Action);
+    withoutGenreIds.add(G.Adventure);
+    withGenresAnd.add(G.Drama);
+    withGenresAnd.add(G.Romance);
+    withoutKwLow.push(KW_ENERGY);
+  } else if (sliderOn(filters.pacing) && isSoftLow(pacing)) {
+    withRuntimeGte = 120;
+    withGenresAnd.add(G.Drama);
+    withGenresAnd.add(G.Romance);
+    withoutKwLow.push(KW_ENERGY);
+  } else if (sliderOn(filters.pacing) && !inNeutralBand(pacing)) {
+    if (inMidGenreBand(pacing)) {
+      withGenresOr.add(G.Action);
+      withGenresOr.add(G.Adventure);
+      withGenresOr.add(G.Thriller);
+    }
+    if (inHighBand(pacing)) {
+      withGenresOr.add(G.Action);
+      withGenresOr.add(G.Adventure);
+      withGenresOr.add(G.Thriller);
+      addHighKeywords(KW_ENERGY, pacing);
+    }
+  }
+
+  // —— Suspense ——
+  if (sliderOn(filters.suspense) && isHardZero(suspense)) {
+    withoutGenreIds.add(G.Thriller);
+    withoutGenreIds.add(G.Mystery);
+    withoutGenreIds.add(G.Horror);
+    withoutKwLow.push(KW_SUSPENSE);
+  } else if (sliderOn(filters.suspense) && isSoftLow(suspense)) {
+    withoutKwLow.push(KW_SUSPENSE);
+  } else if (sliderOn(filters.suspense) && !inNeutralBand(suspense)) {
+    if (inMidGenreBand(suspense)) {
+      withGenresOr.add(G.Thriller);
+      withGenresOr.add(G.Mystery);
+    }
+    if (inHighBand(suspense)) {
+      withGenresOr.add(G.Thriller);
+      withGenresOr.add(G.Mystery);
+      addHighKeywords(KW_SUSPENSE, suspense);
+    }
+  }
+
+  // —— Whimsy (humor) ——
+  if (sliderOn(filters.humor) && isHardZero(humor)) {
+    withoutGenreIds.add(G.Family);
+    withoutGenreIds.add(G.Animation);
+    withoutKwLow.push(KW_WHIMSY);
+  } else if (sliderOn(filters.humor) && isSoftLow(humor)) {
+    withoutKwLow.push(KW_WHIMSY);
+  } else if (sliderOn(filters.humor) && !inNeutralBand(humor)) {
+    if (inMidGenreBand(humor)) {
+      withGenresOr.add(G.Family);
+      withGenresOr.add(G.Animation);
+      withGenresOr.add(G.Fantasy);
+    }
+    if (inHighBand(humor)) {
+      withGenresOr.add(G.Family);
+      withGenresOr.add(G.Animation);
+      withGenresOr.add(G.Fantasy);
+      addHighKeywords(KW_WHIMSY, humor);
+    }
+  }
+
+  // —— Romance ——
+  if (sliderOn(filters.romance) && isHardZero(romance)) {
+    withoutGenreIds.add(G.Romance);
+    withoutKwLow.push(KW_ROMANCE);
+  } else if (sliderOn(filters.romance) && isSoftLow(romance)) {
+    withoutKwLow.push(KW_ROMANCE);
+  } else if (sliderOn(filters.romance) && !inNeutralBand(romance)) {
+    if (inMidGenreBand(romance)) withGenresAnd.add(G.Romance);
+    if (inHighBand(romance)) {
+      withGenresAnd.add(G.Romance);
+      addHighKeywords(KW_ROMANCE, romance);
+    }
+  }
+
+  // —— Grit (intensity) ——
+  if (sliderOn(filters.intensity) && isHardZero(intensity)) {
+    withoutGenreIds.add(G.Crime);
+    withoutKwLow.push(KW_GRIT);
+  } else if (sliderOn(filters.intensity) && isSoftLow(intensity)) {
+    withoutKwLow.push(KW_GRIT);
+  } else if (sliderOn(filters.intensity) && !inNeutralBand(intensity)) {
+    if (inMidGenreBand(intensity)) withGenresAnd.add(G.Crime);
+    if (inHighBand(intensity)) {
+      withGenresAnd.add(G.Crime);
+      addHighKeywords(KW_GRIT, intensity);
+    }
+  }
+
+  if (sliderOn(filters.romance) && sliderOn(filters.pacing) && inHighBand(romance) && pacing <= BLOCK_MAX) {
+    withoutKwLow.push(KW_SIMBA_WITHOUT);
+  }
+
+  if (filters.genre.length === 0) {
+    if (sliderOn(filters.humor) && inHighBand(humor) && humor < 100) withGenresOr.add(G.Comedy);
+  }
+
+  for (const id of getSlider100ConflictGenreIds(filters)) withoutGenreIds.add(id);
+
+  Array.from(withGenresAnd).forEach((id) => withoutGenreIds.delete(id));
+  Array.from(selectedGenreIds).forEach((id) => withoutGenreIds.delete(id));
+
+  const withGenresSlider100Pipe = buildSlider100PrimaryGenrePipe(filters);
+  const withGenresOrStr =
+    withGenresOr.size > 0 ? Array.from(withGenresOr).join('|') : undefined;
+
+  const withKeywordsOr = mergeKeywordPipes(...withKwHigh);
+  const withoutKeywordsOr = mergeKeywordPipes(...withoutKwLow);
+
+  const genrePrimaryHeadComma = buildGenrePrimaryHeadComma(filters);
+
+  return {
+    withKeywordIds: [],
+    withoutKeywordIds: [],
+    withKeywordsOr,
+    withoutKeywordsOr,
+    withGenresOr: withGenresOrStr,
+    withGenresSlider100Pipe,
+    withGenresAndComma: (() => {
+      const s = new Set(withGenresAnd);
+      if (!s.size) return undefined;
+      return Array.from(s).join(',');
+    })(),
+    withoutGenres: withoutGenreIds.size > 0 ? Array.from(withoutGenreIds).join(',') : undefined,
+    withRuntimeGte,
+    withRuntimeLte,
+    genrePrimaryHeadComma,
+  };
 }

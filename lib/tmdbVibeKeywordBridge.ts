@@ -25,6 +25,9 @@ export const VIBE_EXTREME_PHRASE_TO_TMDB_KEYWORD_ID: Readonly<Record<string, num
   chase: 3713,
   adrenaline: 9748,
   explosive: 5237,
+  /** Discover OR cluster (Energy 80–100). */
+  'high-octane': 9748,
+  'high octane': 9748,
   survival: 9955,
   'non-stop': 9748,
   'fast-paced': 3713,
@@ -34,7 +37,6 @@ export const VIBE_EXTREME_PHRASE_TO_TMDB_KEYWORD_ID: Readonly<Record<string, num
   escape: 9955,
   sprint: 3713,
   breakneck: 3713,
-  'high octane': 9748,
   rapid: 3713,
   'action packed': 9748,
   'thrill ride': 9748,
@@ -145,10 +147,18 @@ export const VIBE_EXTREME_PHRASE_TO_TMDB_KEYWORD_ID: Readonly<Record<string, num
   alienation: 10614,
   misogyny: 1701,
   misanthropy: 210710,
+  // —— Whimsy / family-adventure keywords (80–100) ——
+  magic: 6165,
+  adventure: 9663,
+  imagination: 181182,
+
   // —— Suspense high ——
+  thriller: 9748,
+  suspense: 185014,
+  twist: 185014,
+  mystery: 185014,
   'twist ending': 185014,
   paranoia: 185014,
-  mystery: 185014,
   psychological: 10683,
   investigation: 185014,
   'unreliable narrator': 185014,

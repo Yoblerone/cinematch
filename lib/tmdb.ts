@@ -33,9 +33,17 @@ export const GENRE_NAME_TO_ID: Record<Genre, number> = Object.fromEntries(
 
 /** Smart Harvest (Energy sliders) — merged in `buildDiscoverSearchParams`. */
 export type SmartHarvestQuerySlice = {
-  /** Deprecated for Discover: always empty — vibe keywords rank in-app only, never filter the API pool. */
+  /** @deprecated Discover now uses `withKeywordsOr`; kept for tooling. */
   withKeywordIds: number[];
+  /** @deprecated Use `withoutKeywordsOr`. */
   withoutKeywordIds: number[];
+  /**
+   * Pipe-OR TMDB keyword IDs for `with_keywords` (high-band / tiered intent).
+   * @see https://developer.themoviedb.org/reference/discover-movie
+   */
+  withKeywordsOr?: string;
+  /** Pipe-OR TMDB keyword IDs for `without_keywords` (low-band negative guardrails). */
+  withoutKeywordsOr?: string;
   /**
    * Pipe-OR `with_genres` when user picked no genres — sliders **81–99** only (100 uses `withGenresSlider100Pipe`).
    */
@@ -45,8 +53,18 @@ export type SmartHarvestQuerySlice = {
    * Discover merges this with user genres (AND) or alone as OR for a large famous pool.
    */
   withGenresSlider100Pipe?: string;
+  /**
+   * Extra genre IDs that must be included (comma-AND with user genres and each other).
+   * Cry 80–100 → Drama (18); pacing low → 18+10749; etc.
+   */
+  withGenresAndComma?: string;
   /** Comma `without_genres`. */
   withoutGenres?: string;
+  /** Narrow Discover runtime (merged with user runtime band; invalid combos fall back to user-only). */
+  withRuntimeGte?: number;
+  withRuntimeLte?: number;
+  /** Comma-separated genre IDs placed first in `with_genres` (TMDB ordering / relevance bias). */
+  genrePrimaryHeadComma?: string;
 };
 
 const DECADE_RANGES: Record<NonNullable<Decade>, { gte: string; lte: string }> = {
@@ -140,19 +158,19 @@ export interface TmdbDiscoverParams {
   /** Multiple decades; we use min date–max date range. */
   decade?: (Decade & {})[];
   runtime: Runtime;
-  /** Used for in-app ranking after enrich — not sent to Discover `with_keywords`. */
-  theme?: Theme[];
-  visualStyle?: VisualStyle[];
-  soundtrack?: Soundtrack[];
   /** Best Picture is handled by strict local ID fetch; no TMDB keyword. Kept for type compatibility. */
-  oscarFilter?: 'any' | 'nominee' | 'winner' | 'both';
+  oscarFilter?: 'nominee' | 'winner' | 'both';
   page?: number;
-  /** popularity.desc (default in builder), vote_count.desc, vote_average.desc, or primary_release_date.desc. */
+  /** Default in builder is quality-first (`vote_average.desc`); also vote_count.desc, popularity.desc, primary_release_date. */
   sortBy?:
     | 'vote_count.desc'
+    | 'vote_count.asc'
     | 'vote_average.desc'
     | 'popularity.desc'
-    | 'primary_release_date.desc';
+    | 'popularity.asc'
+    | 'revenue.desc'
+    | 'primary_release_date.desc'
+    | 'primary_release_date.asc';
   /** Director prominence: force lesser-known (low) or heavy hitters (high) at API level. */
   voteCountGte?: number;
   voteCountLte?: number;
@@ -198,15 +216,20 @@ function mergeSmartHarvestGenrePipes(anchor?: string, supplement?: string): Set<
 
 /** Build TMDB Discover URL query string (no api_key; caller adds it server-side). */
 export function buildDiscoverSearchParams(params: TmdbDiscoverParams): Record<string, string> {
-  /** Default: most popular first so vibe-matched titles surface blockbusters, not obscure vote ties. */
-  const sortBy = params.sortBy ?? 'popularity.desc';
+  /** Default: relevance/quality over popularity loop (`vote_count.gte` avoids one-off home movies). */
+  const sortBy = params.sortBy ?? 'vote_average.desc';
   const sh = params.smartHarvest;
   const widenDiscover =
     !!sh &&
-    (!!sh.withGenresOr || !!sh.withGenresSlider100Pipe || !!sh.withoutGenres);
-  /** Loosen vote floor when Smart Harvest widens the query so TMDB returns enough pages. */
+    (!!sh.withGenresOr ||
+      !!sh.withGenresSlider100Pipe ||
+      !!sh.withoutGenres ||
+      !!sh.withKeywordsOr ||
+      !!sh.withoutKeywordsOr ||
+      !!sh.withGenresAndComma ||
+      !!sh.genrePrimaryHeadComma);
   const voteGte =
-    params.voteCountGte != null ? String(params.voteCountGte) : widenDiscover ? '5' : '20';
+    params.voteCountGte != null ? String(params.voteCountGte) : widenDiscover ? '200' : '500';
 
   const q: Record<string, string> = {
     sort_by: sortBy,
@@ -214,7 +237,20 @@ export function buildDiscoverSearchParams(params: TmdbDiscoverParams): Record<st
     include_adult: 'false',
   };
 
-  const sliderGenreIds = mergeSmartHarvestGenrePipes(sh?.withGenresSlider100Pipe, sh?.withGenresOr);
+  /**
+   * Keep strict slider-100 anchors separate from optional slider OR hints.
+   * `withGenresOr` is only meant for "no user genres selected" widening.
+   */
+  const sliderGenreIdsStrict = mergeSmartHarvestGenrePipes(sh?.withGenresSlider100Pipe, undefined);
+  const sliderGenreIdsOptional = mergeSmartHarvestGenrePipes(undefined, sh?.withGenresOr);
+
+  const andExtraIds = (() => {
+    if (!sh?.withGenresAndComma) return [] as number[];
+    return sh.withGenresAndComma
+      .split(',')
+      .map((s) => parseInt(String(s).trim(), 10))
+      .filter((n) => Number.isFinite(n));
+  })();
 
   if (params.genre != null && params.genre.length > 0) {
     const ids = params.genre
@@ -222,18 +258,33 @@ export function buildDiscoverSearchParams(params: TmdbDiscoverParams): Record<st
       .filter((id): id is number => id != null);
     if (ids.length > 0) {
       /**
-       * User genres + slider anchors/supplements: **comma AND** every id (primary genre at 100 is always included).
-       * No user genres: pipe **OR** across slider ids for maximum pool width.
+       * User genres + slider AND extras (comma). Only slider-100 anchors merge as AND with user.
+       * `withGenresOr` widening is intentionally ignored when user selected explicit genres.
        */
-      if (sliderGenreIds.size > 0) {
-        q.with_genres = Array.from(new Set([...ids, ...Array.from(sliderGenreIds)])).join(',');
+      const joiner = params.genreJoinMode === 'or' ? '|' : ',';
+      let base: number[];
+      if (joiner === ',' || andExtraIds.length > 0) {
+        base = Array.from(new Set([...ids, ...andExtraIds]));
       } else {
-        const joiner = params.genreJoinMode === 'or' ? '|' : ',';
-        q.with_genres = ids.join(joiner);
+        base = [...ids];
+      }
+      if (sliderGenreIdsStrict.size > 0) {
+        q.with_genres = Array.from(new Set([...base, ...Array.from(sliderGenreIdsStrict)])).join(',');
+      } else if (joiner === ',' || andExtraIds.length > 0) {
+        q.with_genres = base.join(',');
+      } else {
+        q.with_genres = ids.join('|');
       }
     }
-  } else if (sliderGenreIds.size > 0) {
-    q.with_genres = Array.from(sliderGenreIds).join('|');
+  } else if (sliderGenreIdsStrict.size > 0 || sliderGenreIdsOptional.size > 0 || andExtraIds.length > 0) {
+    const allOr = new Set<number>([...Array.from(sliderGenreIdsStrict), ...Array.from(sliderGenreIdsOptional)]);
+    if (andExtraIds.length > 0 && allOr.size > 0) {
+      q.with_genres = Array.from(new Set([...andExtraIds, ...Array.from(allOr)])).join(',');
+    } else if (allOr.size > 0) {
+      q.with_genres = Array.from(allOr).join('|');
+    } else {
+      q.with_genres = andExtraIds.join(',');
+    }
   }
   if (params.decade != null && params.decade.length > 0) {
     const valid = params.decade.filter((d): d is NonNullable<Decade> => d != null);
@@ -249,10 +300,43 @@ export function buildDiscoverSearchParams(params: TmdbDiscoverParams): Record<st
   }
   if (params.runtime != null) {
     const range = RUNTIME_RANGES[params.runtime];
-    q['with_runtime.gte'] = String(range.gte);
-    q['with_runtime.lte'] = String(range.lte);
+    let gte = range.gte;
+    let lte = range.lte;
+    if (sh?.withRuntimeGte != null) gte = Math.max(gte, sh.withRuntimeGte);
+    if (sh?.withRuntimeLte != null) lte = Math.min(lte, sh.withRuntimeLte);
+    if (gte <= lte) {
+      q['with_runtime.gte'] = String(gte);
+      q['with_runtime.lte'] = String(lte);
+    } else {
+      q['with_runtime.gte'] = String(range.gte);
+      q['with_runtime.lte'] = String(range.lte);
+    }
+  } else if (sh?.withRuntimeGte != null || sh?.withRuntimeLte != null) {
+    const gte = sh.withRuntimeGte ?? 0;
+    const lte = sh.withRuntimeLte ?? 400;
+    if (gte <= lte) {
+      q['with_runtime.gte'] = String(gte);
+      q['with_runtime.lte'] = String(lte);
+    }
   }
-  /** No `with_keywords` / `without_keywords` — keeps Discover at ~100 rows when genres are broad; rank in-app. */
+  /**
+   * TMDB: comma in `with_keywords` = AND (too strict). Always coerce to pipe OR for numeric keyword IDs.
+   */
+  const coerceKeywordParamToOr = (raw: string): string =>
+    raw
+      .split(/[|,]/)
+      .map((x) => x.trim())
+      .filter((x) => /^\d+$/.test(x))
+      .join('|');
+
+  if (sh?.withKeywordsOr) {
+    const coerced = coerceKeywordParamToOr(sh.withKeywordsOr);
+    if (coerced) q.with_keywords = coerced;
+  }
+  if (sh?.withoutKeywordsOr) {
+    const w = coerceKeywordParamToOr(sh.withoutKeywordsOr);
+    if (w) q.without_keywords = w;
+  }
   if (params.page != null) q.page = String(params.page);
   if (params.voteCountLte != null) q['vote_count.lte'] = String(params.voteCountLte);
   if (params.popularityLte != null) q['popularity.lte'] = String(params.popularityLte);
@@ -260,6 +344,25 @@ export function buildDiscoverSearchParams(params: TmdbDiscoverParams): Record<st
   if (params.voteAverageGte != null) q['vote_average.gte'] = String(params.voteAverageGte);
   if (params.voteAverageLte != null) q['vote_average.lte'] = String(params.voteAverageLte);
   if (sh?.withoutGenres) q.without_genres = sh.withoutGenres;
+
+  if (q.with_genres && sh?.genrePrimaryHeadComma?.trim()) {
+    const head = sh.genrePrimaryHeadComma
+      .split(',')
+      .map((s) => parseInt(String(s).trim(), 10))
+      .filter((n) => Number.isFinite(n));
+    if (head.length > 0) {
+      const sep = q.with_genres.includes('|') ? '|' : ',';
+      const parts = q.with_genres
+        .split(sep)
+        .map((s) => parseInt(String(s).trim(), 10))
+        .filter((n) => Number.isFinite(n));
+      const headSet = new Set(head);
+      const tail = parts.filter((id) => !headSet.has(id));
+      const ordered = [...head.filter((id, i) => head.indexOf(id) === i), ...tail];
+      q.with_genres = ordered.join(sep);
+    }
+  }
+
   return q;
 }
 
@@ -273,6 +376,7 @@ export function mapTmdbToMovie(t: TmdbMovieResult): Movie {
     id: `tmdb-${t.id}`,
     title: t.title,
     year: year || 0,
+    overview: t.overview?.trim() ? t.overview.trim() : undefined,
     tagline: t.overview?.slice(0, 120) ?? '',
     posterColor: 'from-slate-800 to-amber-900',
     crowd: [],
@@ -290,7 +394,6 @@ export function mapTmdbToMovie(t: TmdbMovieResult): Movie {
     budget: 0,
     rating: typeof t.vote_average === 'number' ? t.vote_average : 0,
     hasAListCast: false,
-    starPowerScore: 0,
     criticsVsFans: 'both',
     oscarWinner: false,
     oscarNominee: false,

@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "safe-start": "rm -rf .next && npm run build && npm run start",
     "lint": "next lint",
     "fetch-best-picture-posters": "node scripts/fetch-best-picture-posters.mjs"
   },

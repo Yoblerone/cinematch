@@ -181,7 +181,7 @@ export default function Step4Aesthetic({
         <p className="text-cream text-sm">Theme, visual style & sound</p>
         {onResetStep != null && <StepResetButton onReset={handleResetStep} />}
       </div>
-      <div className="scroll-area-slate space-y-5 max-w-2xl mx-auto max-h-[65vh] overflow-y-auto py-1">
+      <div className="space-y-5 max-w-2xl mx-auto py-1">
         <OptionSection
           title="Theme / Mood"
           icon={Tag}

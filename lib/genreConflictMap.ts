@@ -21,11 +21,13 @@ export const GENRE_CONFLICT_MAP = {
   romance: [10752, 27] as const,
   /** Tension: no silly / family-forward breaks. */
   suspense: [35, 10751] as const,
+  /** Grit / dark intent: soften family animation comedy primaries. */
+  intensity: [10751, 16, 35] as const,
 } as const;
 
 export type EnergyAxisKey = keyof typeof GENRE_CONFLICT_MAP;
 
-const AXES: EnergyAxisKey[] = ['pacing', 'cryMeter', 'humor', 'romance', 'suspense'];
+const AXES: EnergyAxisKey[] = ['pacing', 'cryMeter', 'humor', 'romance', 'suspense', 'intensity'];
 
 /** Union of `GENRE_CONFLICT_MAP` rows for every axis currently at slider 100. */
 export function getSlider100ConflictGenreIds(filters: FilterState): number[] {

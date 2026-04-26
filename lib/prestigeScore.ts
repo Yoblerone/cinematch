@@ -49,7 +49,8 @@ export function iconPedigreeScore(
   else if (c >= 10) base = 58;
   else if (c >= MAJOR_CREDITS) base = 48;
   let bonus = 0;
-  if (order != null && order <= 1) bonus += 14;
+  if (order != null && order <= 2) bonus += 12;
+  if (order != null && order <= 1) bonus += 6;
   if (order === 0) bonus += 8;
   if (role === 'director') bonus += 6;
   return Math.min(100, base + bonus);
@@ -71,11 +72,12 @@ function blendPerson(
 function topLeads(movie: Movie): NonNullable<Movie['castCredits']> {
   const raw = movie.castCredits ?? [];
   const sorted = [...raw].sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
-  return sorted.slice(0, 2);
+  /** Top three billed (TMDB `order`); Star Power / prestige weighting focuses on leads, not deep cast. */
+  return sorted.slice(0, 3);
 }
 
 /**
- * Single-axis prestige match 0–100 for cast (top two billing) or director.
+ * Single-axis prestige match 0–100 for cast (top three billing) or director.
  */
 export function prestigeCastMatch(movie: Movie, slider: number, truthList: ProminenceTruthList): number {
   const leads = topLeads(movie);
