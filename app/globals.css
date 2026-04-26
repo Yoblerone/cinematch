@@ -308,12 +308,10 @@ input[type="range"]::-moz-range-thumb {
     0 0 6px rgba(255, 215, 0, 0.85),
     0 0 16px rgba(255, 215, 0, 0.55),
     0 0 28px rgba(255, 215, 0, 0.3);
-  animation: filament-flicker 0.28s ease-out;
 }
 
 .filament-label-on {
   text-shadow: 0 0 8px #ffd700;
-  animation: filament-flicker 0.28s ease-out;
 }
 
 .filament-label-off {
@@ -329,14 +327,6 @@ input[type="range"]::-moz-range-thumb {
   filter: grayscale(1);
 }
 
-@keyframes filament-flicker {
-  0% { opacity: 0.35; }
-  30% { opacity: 1; }
-  52% { opacity: 0.72; }
-  72% { opacity: 1; }
-  86% { opacity: 0.78; }
-  100% { opacity: 1; }
-}
 
 /* Aesthetic step: 2×3 carousel grid (6 tags at a time), Burgundy + Yellow */
 .aesthetic-chip-grid {

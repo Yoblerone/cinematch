@@ -86,9 +86,7 @@ export default function Step1Basics({
           <div className="flex items-center gap-2 text-brass-light mb-3">
             <Film className="w-5 h-5" />
             <span className="font-medium">Genre</span>
-            {genre.length > 0 && (
-              <span className="text-cream text-xs">(up to {MAX_GENRES})</span>
-            )}
+            <span className="text-cream text-xs">(up to {MAX_GENRES})</span>
           </div>
           <div className="flex flex-wrap gap-2">
             <Chip selected={genre.length === 0} onClick={() => onGenreChange([])}>Any</Chip>
@@ -114,7 +112,6 @@ export default function Step1Basics({
           <div className="flex items-center gap-2 text-brass-light mb-3">
             <Calendar className="w-5 h-5" />
             <span className="font-medium">Decade</span>
-            <span className="text-cream text-xs">(select any)</span>
           </div>
           <div className="flex flex-wrap gap-2">
             {DECADE_OPTIONS.map(({ value, label }) => {

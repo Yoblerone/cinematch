@@ -25,7 +25,7 @@ export default function EnergySliderRow({
   density = 'full',
   variant = 'default',
 }: EnergySliderRowProps) {
-  const resolved = value ?? (variant === 'pacingBinary' ? 20 : 50);
+  const resolved = value ?? 20;
   return (
     <div
       className={`w-full space-y-2 transition-all duration-200 ${

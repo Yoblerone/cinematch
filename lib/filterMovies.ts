@@ -395,5 +395,23 @@ export function filterMovies(
   if (process.env.NODE_ENV !== 'production' || process.env.THEMATIC_DENSITY_AUDIT === '1') {
     logThematicDensityTopFive(out, filters);
   }
+
+  out = applyFranchiseDiversityCap(out);
+
   return out;
+}
+
+/**
+ * Franchise diversity: for movies belonging to the same TMDB collection, keep only the
+ * highest-ranked entry (already at the top of `movies` since input is ranked).
+ * Movies with no collection (collectionId null/undefined) are always kept.
+ */
+function applyFranchiseDiversityCap(movies: import('./types').Movie[]): import('./types').Movie[] {
+  const seenCollections = new Set<number>();
+  return movies.filter((m) => {
+    if (!m.collectionId) return true;
+    if (seenCollections.has(m.collectionId)) return false;
+    seenCollections.add(m.collectionId);
+    return true;
+  });
 }

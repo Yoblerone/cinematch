@@ -165,6 +165,8 @@ export interface Movie {
   vibeDensityScore?: number;
   /** Set when the row was added by Claude rerank + TMDB search, not the original discover pool. */
   claudeSuggested?: boolean;
+  /** TMDB belongs_to_collection.id — used for franchise diversity dedup. */
+  collectionId?: number | null;
 }
 
 /** Max genres user can select (TMDB discover uses AND for multiple). */

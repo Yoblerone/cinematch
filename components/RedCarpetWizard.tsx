@@ -464,7 +464,7 @@ export default function RedCarpetWizard() {
                   world_style={filters.world_style}
                   onChange={(key, value) => updateFilters({ [key]: value })}
                   onToggle={(key, active) =>
-                    updateFilters({ [key]: active ? (key === 'narrative_pacing' ? FILTER_WEIGHT_LOW : 50) : null })
+                    updateFilters({ [key]: active ? FILTER_WEIGHT_LOW : null })
                   }
                   onResetStep={() =>
                     updateFilters({

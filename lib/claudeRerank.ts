@@ -1,9 +1,28 @@
-import type { FilterState, Movie } from './types';
+import type { FilterState, Movie, Decade } from './types';
 import type { TmdbMovieResult } from './tmdb';
-import { mapTmdbToMovie } from './tmdb';
+import { mapTmdbToMovie, GENRE_NAME_TO_ID } from './tmdb';
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const TMDB_SEARCH = 'https://api.themoviedb.org/3/search/movie';
+
+const DECADE_YEAR_RANGES: Record<NonNullable<Decade>, { start: number; end: number }> = {
+  '60s': { start: 1960, end: 1969 },
+  '70s': { start: 1970, end: 1979 },
+  '80s': { start: 1980, end: 1989 },
+  '90s': { start: 1990, end: 1999 },
+  '2000s': { start: 2000, end: 2009 },
+  '2010s': { start: 2010, end: 2019 },
+  '2020s': { start: 2020, end: 2029 },
+};
+
+function buildDecadeConstraint(decades: FilterState['decade']): string {
+  const valid = (decades ?? []).filter((d): d is NonNullable<Decade> => d != null);
+  if (valid.length === 0) return '';
+  const ranges = valid.map((d) => DECADE_YEAR_RANGES[d]);
+  const minYear = Math.min(...ranges.map((r) => r.start));
+  const maxYear = Math.max(...ranges.map((r) => r.end));
+  return ` Only include films released between ${minYear} and ${maxYear} — do not suggest films from outside this date range.`;
+}
 
 function buildVibeDescriptionClause(filters: FilterState): string {
   const parts: string[] = [];
@@ -165,7 +184,11 @@ export async function claudeRerank(pool: Movie[], filters: FilterState, apiKey: 
       return pool;
     }
 
-    const userMessage = `Here are up to 60 movies from a discovery pool: ${list}. ${vibeDescription} IMPORTANT: Only include films that genuinely belong in ALL of these genres: ${genreList}. A film must fit every selected genre to appear in the list. Do not include films that only match one genre. Return a JSON array of exactly 36 objects ranked best to worst match. Each object must have exactly two fields: title (string) and match (integer 0-100). For each film return a match percentage (0-100) representing how well it fits ALL of the specified criteria. 100 means perfect fit, 0 means no fit. You may include films not in the list above if they are a strong match — but only well-known films with wide release. Return only the JSON array.`;
+    const decadeConstraint = buildDecadeConstraint(filters.decade);
+    const offPoolConstraint = filters.genre.length > 0
+      ? ` Any film you suggest that is not in the list above must genuinely be a ${genreList} film — do not suggest films that are not actually in those genres.`
+      : '';
+    const userMessage = `Here are up to 60 movies from a discovery pool: ${list}. ${vibeDescription} IMPORTANT: Only include films that genuinely belong in ALL of these genres: ${genreList}. A film must fit every selected genre to appear in the list. Do not include films that only match one genre.${decadeConstraint} Return a JSON array of exactly 36 objects ranked best to worst match. Each object must have exactly two fields: title (string) and match (integer 0-100). For each film return a match percentage (0-100) representing how well it fits ALL of the specified criteria. 100 means perfect fit, 0 means no fit. You may include films not in the list above if they are a strong match — but only well-known films with wide release.${offPoolConstraint} Return only the JSON array.`;
 
     const response = await fetch(ANTHROPIC_URL, {
       method: 'POST',
@@ -210,6 +233,16 @@ export async function claudeRerank(pool: Movie[], filters: FilterState, apiKey: 
     const out: Movie[] = [];
     const seen = new Set<string>();
 
+    // Pre-compute required genre IDs for backfill validation.
+    // Backfill films come from Claude suggestions that TMDB Discover didn't surface — meaning
+    // TMDB's own tagging is already incomplete for that combo. Requiring ALL genre tags would
+    // use the same incomplete system to reject valid matches. Instead, require AT LEAST ONE
+    // selected genre to be present (blocks clearly off-genre hallucinations while allowing
+    // genuine matches that TMDB under-tags).
+    const requiredGenreIds = filters.genre
+      .map((g) => GENRE_NAME_TO_ID[g])
+      .filter((id): id is number => id != null);
+
     for (const item of rankedItems.slice(0, 36)) {
       const title = item.title;
       const key = title.trim().toLowerCase();
@@ -226,6 +259,16 @@ export async function claudeRerank(pool: Movie[], filters: FilterState, apiKey: 
       const found = await searchMovieByTitle(title, apiKey);
       if (!found) continue;
       const suggested = movieFromSearchResult(found);
+
+      // Genre gate: backfill suggestions must match AT LEAST ONE selected genre per TMDB genre_ids.
+      // Using `some` because TMDB tagging is incomplete for niche combos — the pool-level `every`
+      // filter and the Claude prompt already block clearly off-genre hallucinations.
+      if (requiredGenreIds.length > 0) {
+        const movieGenreIds = suggested.genreIds ?? [];
+        const hasAnyGenre = requiredGenreIds.some((id) => movieGenreIds.includes(id));
+        if (!hasAnyGenre) continue;
+      }
+
       suggested.matchPercentage = item.match;
       out.push(suggested);
     }

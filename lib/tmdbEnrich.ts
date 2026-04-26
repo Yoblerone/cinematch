@@ -3,7 +3,7 @@
  * Derives pacing, humor, romance, etc. from genre + keywords when TMDB has no direct field.
  */
 
-import type { Movie, Genre, Theme, VisualStyle, Soundtrack, CriticsVsFans } from './types';
+import type { Movie, Genre, Theme, VisualStyle, Soundtrack, CriticsVsFans, Decade } from './types';
 import type { FilterState } from './types';
 import type { TmdbMovieResult, TmdbDiscoverResponse } from './tmdb';
 import { GENRE_ID_TO_NAME, GENRE_NAME_TO_ID, buildDiscoverSearchParams, type SmartHarvestQuerySlice } from './tmdb';
@@ -23,6 +23,7 @@ import {
   isOscarNomineeId,
   isOscarListedId,
   getOscarAwardInfo,
+  OSCAR_RESULTS,
 } from './data/oscar-truth';
 import { filterMovies } from './filterMovies';
 import { claudeRerank } from './claudeRerank';
@@ -296,6 +297,7 @@ export interface TmdbMovieDetails {
   genre_ids?: number[];
   genres?: { id: number; name: string }[];
   imdb_id?: string | null;
+  belongs_to_collection?: { id: number; name: string } | null;
   /** Present when fetching with append_to_response=keywords */
   keywords?: { keywords?: { id: number; name: string }[] };
   /** Present when fetching with append_to_response=videos */
@@ -562,6 +564,7 @@ export async function enrichMovie(
     trailerKey: extractYoutubeTrailerKey(details?.videos) ?? null,
     castCredits: castCreditsMapped,
     crewCredits: crewCreditsMapped,
+    collectionId: details?.belongs_to_collection?.id ?? null,
   };
 }
 
@@ -1187,6 +1190,40 @@ async function padRankedPoolIfThin(
   return out;
 }
 
+const DECADE_OSCAR_YEAR_MAP: Record<NonNullable<Decade>, { min: number; max: number }> = {
+  '60s':   { min: 1960, max: 1969 },
+  '70s':   { min: 1970, max: 1979 },
+  '80s':   { min: 1980, max: 1989 },
+  '90s':   { min: 1990, max: 1999 },
+  '2000s': { min: 2000, max: 2009 },
+  '2010s': { min: 2010, max: 2019 },
+  '2020s': { min: 2020, max: 2030 },
+};
+
+/**
+ * Pre-filter oscar IDs by decade (using ceremony year as proxy for film year) and cap total
+ * to avoid enriching hundreds of films when no decade is specified.
+ */
+function preFilterOscarIds(ids: number[], filters: FilterState): number[] {
+  const MAX_OSCAR_ENRICH = 200;
+  const idSet = new Set(ids);
+
+  if (filters.decade.length > 0) {
+    const validYears = new Set<number>();
+    for (const d of filters.decade) {
+      if (!d) continue;
+      const range = DECADE_OSCAR_YEAR_MAP[d];
+      for (let y = range.min; y <= range.max; y++) validYears.add(y);
+    }
+    return OSCAR_RESULTS
+      .filter((e) => idSet.has(e.tmdb_id) && validYears.has(e.year))
+      .map((e) => e.tmdb_id);
+  }
+
+  // No decade filter — cap to most recent MAX_OSCAR_ENRICH (list is year-desc sorted).
+  return ids.slice(0, MAX_OSCAR_ENRICH);
+}
+
 /** Fetch and enrich movies by TMDB IDs only; then keep only those in the allowed set. */
 async function fetchAndEnrichByIds(
   apiKey: string,
@@ -1194,7 +1231,9 @@ async function fetchAndEnrichByIds(
   allowed: (id: number) => boolean,
   filters: FilterState
 ): Promise<Movie[]> {
-  const rawResults: TmdbMovieResult[] = ids.map((id) => stubResult(id));
+  // Pre-filter by decade and cap total to avoid enriching hundreds of films.
+  const filteredIds = preFilterOscarIds(ids, filters);
+  const rawResults: TmdbMovieResult[] = filteredIds.map((id) => stubResult(id));
   const cache = new Map<number, Movie>();
   const creditCountCache = new Map<number, number>();
   const enrichOne = async (base: TmdbMovieResult): Promise<Movie> => {
@@ -1212,17 +1251,19 @@ async function fetchAndEnrichByIds(
   }
   const filtered = enriched.filter((m) => allowed(tmdbIdFromMovieId(m.id)));
   const result = filterMovies(filtered, filters, { skipMaxSliderVibeTrim: true });
+
   // "List of record" mode: if Oscar filter is the only active preference, keep strict year order.
-  // Otherwise keep full score-based order (1927–present VIP list; sliders sort locally, no pool cap).
   if (!hasSecondaryFilters(filters)) {
     result.sort((a, b) => {
       const yearDiff = (b.year ?? 0) - (a.year ?? 0);
       if (yearDiff !== 0) return yearDiff;
       return (b.oscarWinner ? 1 : 0) - (a.oscarWinner ? 1 : 0);
     });
-    return result;
+    return result.slice(0, 36);
   }
-  return result;
+
+  // Secondary filters active (vibe sliders, decade, etc.) — run Claude rerank for best ordering.
+  return claudeRerank(result, filters, apiKey);
 }
 
 /** Live API: discover/movie with genres + runtime/decade; enrich → keyword-based vibe rank (no Discover keyword filter). */
@@ -1369,10 +1410,13 @@ export async function getTmdbMatches(
   /**
    * Default Discover: quality + minimum engagement (no `popularity.desc` loop).
    * Skips only **Fans** sort and **indie Star Power** (low vote_count.asc) paths.
+   * Documentary (TMDB genre 99) uses a lower floor — many acclaimed docs have <500 TMDB votes.
    */
+  const isDocumentarySearch = activeBaselineGenres.includes('Documentary');
+  const defaultVoteFloor = isDocumentarySearch ? 100 : 500;
   if (!indieDiscover && !fansDiscover) {
     discoverBase.sortBy = 'vote_average.desc';
-    discoverBase.voteCountGte = Math.max(discoverBase.voteCountGte ?? 0, 500);
+    discoverBase.voteCountGte = Math.max(discoverBase.voteCountGte ?? 0, defaultVoteFloor);
     delete discoverBase.voteCountLte;
     delete discoverBase.popularityLte;
     delete discoverBase.popularityGte;
@@ -1432,24 +1476,33 @@ export async function getTmdbMatches(
 
   // Warehouse pull:
   // - Single genre: keep broad baseline pages 1-10.
-  // - Multi genre: fetch pages 1-5 per selected genre (strict per-genre representatives), then merge+dedupe.
-  const initialRows =
-    activeBaselineGenres.length >= 2
-      ? await Promise.all(
-          activeBaselineGenres.flatMap((genre) =>
-            [1, 2, 3, 4, 5].map((page) =>
-              fetchDiscoverRaw(
-                apiKey,
-                { ...anchorBase, genre: [genre], genreJoinMode: 'and' },
-                page,
-              ),
-            ),
-          ),
-        )
-      : await Promise.all([1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((page) => fetchDiscoverRaw(apiKey, anchorBase, page)));
-  let allMovies = dedupeDiscoverRows(initialRows.flatMap((d) => d.results ?? []));
+  // - Multi genre: FIRST fetch with combined AND query (true intersections), THEN supplement
+  //   with individual genre pages. This ensures niche combos like Documentary+War get genuine
+  //   matches before falling back to single-genre representatives.
+  let allMovies: TmdbMovieResult[] = [];
+  if (activeBaselineGenres.length >= 2) {
+    // Step 1: combined AND query — films tagged with ALL selected genres simultaneously.
+    const andBase: DiscoverFetchParams = { ...anchorBase, genre: activeBaselineGenres, genreJoinMode: 'and' };
+    const andRows = await Promise.all([1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((page) => fetchDiscoverRaw(apiKey, andBase, page)));
+    allMovies = dedupeDiscoverRows(andRows.flatMap((d) => d.results ?? []));
 
-  // Multi-genre fallback: widen from AND to OR if pool is thin.
+    // Step 2: supplement with per-genre pages if combined pool is thin.
+    if (allMovies.length < DEEP_POOL_MAX) {
+      const perGenreRows = await Promise.all(
+        activeBaselineGenres.flatMap((genre) =>
+          [1, 2, 3, 4, 5].map((page) =>
+            fetchDiscoverRaw(apiKey, { ...anchorBase, genre: [genre], genreJoinMode: 'and' }, page),
+          ),
+        ),
+      );
+      allMovies = dedupeDiscoverRows([...allMovies, ...perGenreRows.flatMap((d) => d.results ?? [])]);
+    }
+  } else {
+    const singleRows = await Promise.all([1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((page) => fetchDiscoverRaw(apiKey, anchorBase, page)));
+    allMovies = dedupeDiscoverRows(singleRows.flatMap((d) => d.results ?? []));
+  }
+
+  // Multi-genre fallback: widen from AND to OR if pool is still thin after combined+per-genre fetches.
   if (allMovies.length < DEEP_POOL_MAX && activeBaselineGenres.length >= 2) {
     genreJoinMode = 'or';
     const orBase: DiscoverFetchParams = { ...anchorBase, genreJoinMode: 'or' };
@@ -1542,7 +1595,9 @@ export async function getTmdbMatches(
   const finalScored = scored.filter(s => {
     if (selectedGenreIds.length === 0) return true;
     const movieGenreIds = s.movie.genreIds ?? [];
-    return selectedGenreIds.some(id => movieGenreIds.includes(id));
+    // Require ALL selected genres to be present (AND logic) so multi-genre searches
+    // don't surface films that only match one of the selected genres.
+    return selectedGenreIds.every(id => movieGenreIds.includes(id));
   }).sort((a, b) => b.totalScore - a.totalScore).slice(0, DEEP_POOL_MAX);
 
   console.log('[Discover] Vibe resort (manifest weights)', {
@@ -1562,8 +1617,57 @@ export async function getTmdbMatches(
     m.matchPercentage = Math.max(0, Math.min(100, Math.round(fs / 8)));
     m.vibeDensityScore = finalScored[i]!.score.baseVibeScore;
   }
+  const diversePool = applyFranchiseDiversityCap(pool);
+  const animationCapPool = applyAnimationCap(diversePool, 5, activeBaselineGenres);
   const hasActiveVibe = AXES.some((axis) => filters[axis] != null) || activeBaselineGenres.length >= 2 || filters.aListCast != null || filters.directorProminence != null || filters.oscarFilter != null || filters.criticsVsFans != null;
-  const finalResults = hasActiveVibe ? await claudeRerank(pool, filters, apiKey) : pool.slice(0, 36);
+  const finalResults = hasActiveVibe ? await claudeRerank(animationCapPool, filters, apiKey) : animationCapPool.slice(0, 36);
   console.log('Total Movies Returned (deep-review vibe pool):', finalResults.length);
   return finalResults;
+}
+
+/**
+ * Franchise diversity: for movies belonging to the same TMDB collection, keep only the
+ * highest-ranked entry (already at the top since input is ranked best-first).
+ * Movies with no collection (collectionId null/undefined) are always kept.
+ */
+function applyFranchiseDiversityCap(movies: Movie[]): Movie[] {
+  const seenCollections = new Set<number>();
+  return movies.filter((m) => {
+    if (!m.collectionId) return true;
+    if (seenCollections.has(m.collectionId)) return false;
+    seenCollections.add(m.collectionId);
+    return true;
+  });
+}
+
+const ANIMATION_GENRE_ID = 16;
+const FAMILY_GENRE_ID = 10751;
+
+/**
+ * Animation cap: when Animation or Family is not among the user's selected genres,
+ * limit animated films (TMDB genre 16) to `maxAnimated` slots and apply a quality floor
+ * (popularity ≥ 50 OR rating ≥ 7.5 with voteCount ≥ 5000).
+ * Animated films below the quality floor are removed entirely.
+ * Input is already ranked best-first so the top-scoring animated films survive.
+ */
+function applyAnimationCap(movies: Movie[], maxAnimated: number, selectedGenres: string[]): Movie[] {
+  const animationOrFamilySelected =
+    selectedGenres.includes('Animation') || selectedGenres.includes('Family');
+  if (animationOrFamilySelected) return movies;
+
+  let animatedCount = 0;
+  return movies.filter((m) => {
+    const isAnimated = (m.genreIds ?? []).includes(ANIMATION_GENRE_ID) ||
+      (m.genreIds ?? []).includes(FAMILY_GENRE_ID) && (m.genreIds ?? []).includes(ANIMATION_GENRE_ID);
+    if (!isAnimated) return true;
+
+    const meetsQualityFloor =
+      (m.popularity ?? 0) >= 50 ||
+      ((m.rating ?? 0) >= 7.5 && (m.voteCount ?? 0) >= 5000);
+    if (!meetsQualityFloor) return false;
+
+    if (animatedCount >= maxAnimated) return false;
+    animatedCount++;
+    return true;
+  });
 }

@@ -27,6 +27,7 @@ function ChipRow<T extends string>({
   expanded,
   onExpandToggle,
   label,
+  sublabel,
   icon,
 }: {
   options: T[];
@@ -35,6 +36,7 @@ function ChipRow<T extends string>({
   expanded: boolean;
   onExpandToggle: () => void;
   label: string;
+  sublabel?: string;
   icon?: React.ReactNode;
 }) {
   const selectedInList = selectedSet.filter((s) => options.includes(s));
@@ -47,6 +49,7 @@ function ChipRow<T extends string>({
       <label className="block text-sm font-medium text-brass-light mb-2 flex items-center gap-1.5">
         {icon}
         {label}
+        {sublabel && <span className="text-cream text-xs font-normal">{sublabel}</span>}
       </label>
       <div className="flex flex-wrap gap-2 items-center">
         {visible.map((opt) => {
@@ -251,6 +254,7 @@ export default function DirectorsConsole({
                     expanded={expandedGenre}
                     onExpandToggle={() => setExpandedGenre((e) => !e)}
                     label="Genre"
+                    sublabel="(up to 3)"
                   />
                   <div>
                     <label className="block text-sm font-medium text-brass-light mb-2">Decade</label>
@@ -307,7 +311,7 @@ export default function DirectorsConsole({
                       value={filters[key]}
                       active={filters[key] != null}
                       onToggleActive={(active) =>
-                        onUpdate({ [key]: active ? (key === 'narrative_pacing' ? FILTER_WEIGHT_LOW : 50) : null })
+                        onUpdate({ [key]: active ? FILTER_WEIGHT_LOW : null })
                       }
                       onChange={(v) => onUpdate({ [key]: v })}
                       density="responsive"
@@ -338,12 +342,12 @@ export default function DirectorsConsole({
                               role="switch"
                               aria-checked={filters.aListCast != null}
                               aria-label="Toggle Star Power"
-                              onClick={() => onUpdate({ aListCast: filters.aListCast == null ? 'high' : null })}
+                              onClick={() => onUpdate({ aListCast: filters.aListCast == null ? 'low' : null })}
                               className={`filament-switch ${filters.aListCast != null ? 'filament-switch--on' : 'filament-switch--off'}`}
                             />
                             <button
                               type="button"
-                              onClick={() => onUpdate({ aListCast: filters.aListCast == null ? 'high' : null })}
+                              onClick={() => onUpdate({ aListCast: filters.aListCast == null ? 'low' : null })}
                               className={`bg-transparent p-0 text-sm font-medium ${filters.aListCast != null ? 'filament-label-on text-[#FFD700]' : 'text-brass-light'}`}
                               aria-label="Toggle Star Power"
                             >
@@ -381,7 +385,7 @@ export default function DirectorsConsole({
                               aria-checked={filters.directorProminence != null}
                               aria-label="Toggle Director prominence"
                               onClick={() =>
-                                onUpdate({ directorProminence: filters.directorProminence == null ? 'high' : null })
+                                onUpdate({ directorProminence: filters.directorProminence == null ? 'low' : null })
                               }
                               className={`filament-switch ${
                                 filters.directorProminence != null ? 'filament-switch--on' : 'filament-switch--off'
@@ -390,7 +394,7 @@ export default function DirectorsConsole({
                             <button
                               type="button"
                               onClick={() =>
-                                onUpdate({ directorProminence: filters.directorProminence == null ? 'high' : null })
+                                onUpdate({ directorProminence: filters.directorProminence == null ? 'low' : null })
                               }
                               className={`bg-transparent p-0 text-sm font-medium ${filters.directorProminence != null ? 'filament-label-on text-[#FFD700]' : 'text-brass-light'}`}
                               aria-label="Toggle Director prominence"
@@ -428,12 +432,12 @@ export default function DirectorsConsole({
                             role="switch"
                             aria-checked={filters.oscarFilter != null}
                             aria-label="Toggle Best Picture filter"
-                            onClick={() => onUpdate({ oscarFilter: filters.oscarFilter == null ? 'both' : null })}
+                            onClick={() => onUpdate({ oscarFilter: filters.oscarFilter == null ? 'nominee' : null })}
                             className={`filament-switch ${filters.oscarFilter != null ? 'filament-switch--on' : 'filament-switch--off'}`}
                           />
                           <button
                             type="button"
-                            onClick={() => onUpdate({ oscarFilter: filters.oscarFilter == null ? 'both' : null })}
+                            onClick={() => onUpdate({ oscarFilter: filters.oscarFilter == null ? 'nominee' : null })}
                             className={`block bg-transparent p-0 text-sm font-medium ${filters.oscarFilter != null ? 'filament-label-on text-[#FFD700]' : 'text-brass-light'}`}
                             aria-label="Toggle Best Picture filter"
                           >
@@ -469,12 +473,12 @@ export default function DirectorsConsole({
                             role="switch"
                             aria-checked={filters.criticsVsFans != null}
                             aria-label="Toggle Critics vs. Fans filter"
-                            onClick={() => onUpdate({ criticsVsFans: filters.criticsVsFans == null ? 'both' : null })}
+                            onClick={() => onUpdate({ criticsVsFans: filters.criticsVsFans == null ? 'critics' : null })}
                             className={`filament-switch ${filters.criticsVsFans != null ? 'filament-switch--on' : 'filament-switch--off'}`}
                           />
                           <button
                             type="button"
-                            onClick={() => onUpdate({ criticsVsFans: filters.criticsVsFans == null ? 'both' : null })}
+                            onClick={() => onUpdate({ criticsVsFans: filters.criticsVsFans == null ? 'critics' : null })}
                             className={`block bg-transparent p-0 text-sm font-medium ${filters.criticsVsFans != null ? 'filament-label-on text-[#FFD700]' : 'text-brass-light'}`}
                             aria-label="Toggle Critics vs. Fans filter"
                           >

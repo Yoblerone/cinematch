@@ -58,12 +58,12 @@ export default function Step4Pedigree({
                 role="switch"
                 aria-checked={aListCast != null}
                 aria-label="Toggle Star Power"
-                onClick={() => onAListCast(aListCast == null ? 'high' : null)}
+                onClick={() => onAListCast(aListCast == null ? 'low' : null)}
                 className={`filament-switch ${aListCast != null ? 'filament-switch--on' : 'filament-switch--off'}`}
               />
               <button
                 type="button"
-                onClick={() => onAListCast(aListCast == null ? 'high' : null)}
+                onClick={() => onAListCast(aListCast == null ? 'low' : null)}
                 className={`bg-transparent p-0 text-sm font-medium ${aListCast != null ? 'text-[#FFD700] filament-label-on' : 'text-brass-light'}`}
                 aria-label="Toggle Star Power"
               >
@@ -101,12 +101,12 @@ export default function Step4Pedigree({
                 role="switch"
                 aria-checked={directorProminence != null}
                 aria-label="Toggle Director prominence"
-                onClick={() => onDirectorProminence(directorProminence == null ? 'high' : null)}
+                onClick={() => onDirectorProminence(directorProminence == null ? 'low' : null)}
                 className={`filament-switch ${directorProminence != null ? 'filament-switch--on' : 'filament-switch--off'}`}
               />
               <button
                 type="button"
-                onClick={() => onDirectorProminence(directorProminence == null ? 'high' : null)}
+                onClick={() => onDirectorProminence(directorProminence == null ? 'low' : null)}
                 className={`bg-transparent p-0 text-sm font-medium ${directorProminence != null ? 'text-[#FFD700] filament-label-on' : 'text-brass-light'}`}
                 aria-label="Toggle Director prominence"
               >
@@ -144,12 +144,12 @@ export default function Step4Pedigree({
               role="switch"
               aria-checked={oscarOn}
               aria-label="Toggle Best Picture filter"
-              onClick={() => onOscarFilter(oscarOn ? null : 'both')}
+              onClick={() => onOscarFilter(oscarOn ? null : 'nominee')}
               className={`filament-switch ${oscarOn ? 'filament-switch--on' : 'filament-switch--off'}`}
             />
             <button
               type="button"
-              onClick={() => onOscarFilter(oscarOn ? null : 'both')}
+              onClick={() => onOscarFilter(oscarOn ? null : 'nominee')}
               className={`bg-transparent p-0 font-medium text-sm ${oscarOn ? 'text-[#FFD700] filament-label-on' : 'text-brass-light'}`}
               aria-label="Toggle Best Picture filter"
             >
@@ -186,12 +186,12 @@ export default function Step4Pedigree({
               role="switch"
               aria-checked={criticsOn}
               aria-label="Toggle Critics vs. Fans filter"
-              onClick={() => onCriticsVsFans(criticsOn ? null : 'both')}
+              onClick={() => onCriticsVsFans(criticsOn ? null : 'critics')}
               className={`filament-switch ${criticsOn ? 'filament-switch--on' : 'filament-switch--off'}`}
             />
             <button
               type="button"
-              onClick={() => onCriticsVsFans(criticsOn ? null : 'both')}
+              onClick={() => onCriticsVsFans(criticsOn ? null : 'critics')}
               className={`bg-transparent p-0 font-medium text-sm ${criticsOn ? 'text-[#FFD700] filament-label-on' : 'text-brass-light'}`}
               aria-label="Toggle Critics vs. Fans filter"
             >
