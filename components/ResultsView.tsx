@@ -146,7 +146,7 @@ export default function ResultsView({
                     title="Surprise Me (Chaos Mode)"
                   >
                     <Dices className={`w-3.5 h-3.5 ${rollingDice ? 'animate-pulse' : ''}`} aria-hidden />
-                    <span>{rollingDice ? 'Rolling the dice…' : 'Surprise Me'}</span>
+                    <span className="hidden min-[360px]:inline">{rollingDice ? 'Rolling…' : 'Surprise Me'}</span>
                   </button>
                 )}
               </div>
@@ -206,10 +206,10 @@ export default function ResultsView({
             <div className="flex min-h-0 flex-1 flex-col px-4 sm:px-6">
               {/* flex-1 sandwich: vertical center; card uses external my-12 only (not internal py-8 on scroll) */}
               <div className="flex min-h-0 flex-1 flex-col items-center justify-center">
-                <div className="mx-auto my-12 flex w-full max-w-4xl min-h-0 max-h-[calc(100%-6rem)] flex-initial flex-col overflow-hidden rounded-xl border-2 border-brass/50 bg-cherry-900/80 shadow-lg">
+                <div className="mx-auto my-3 sm:my-12 flex w-full max-w-4xl min-h-0 max-h-[calc(100%-1.5rem)] sm:max-h-[calc(100%-6rem)] flex-initial flex-col overflow-hidden rounded-xl border-2 border-brass/50 bg-cherry-900/80 shadow-lg">
                   <div
                     ref={internalGridRef}
-                    className={`min-h-0 flex-1 overflow-y-auto px-4 py-8 custom-scrollbar overscroll-y-contain ${isSlateOpen ? 'blur-sm pointer-events-none select-none' : ''}`}
+                    className={`min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:py-8 custom-scrollbar overscroll-y-contain ${isSlateOpen ? 'blur-sm pointer-events-none select-none' : ''}`}
                   >
                     <div className="grid min-w-0 grid-cols-1 gap-3 min-[380px]:grid-cols-2 sm:gap-4 lg:grid-cols-3">
                       {displayed.map((movie, i) => {
@@ -255,7 +255,7 @@ export default function ResultsView({
 
       {showPaginationFooter && (
         <footer
-          className="z-[40] flex w-full flex-none flex-col border-t border-brass/40 bg-cherry-950 py-4 shadow-[0_-4px_24px_rgba(0,0,0,0.35)]"
+          className="z-[40] flex w-full flex-none flex-col border-t border-brass/40 bg-cherry-950 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-4px_24px_rgba(0,0,0,0.35)]"
           aria-label="Results pagination"
         >
           <div className="flex min-h-[3rem] items-center justify-center gap-4 px-4">

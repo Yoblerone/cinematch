@@ -82,6 +82,20 @@ function buildVibeDescriptionClause(filters: FilterState): string {
     parts.push('directed by debut or lesser-known filmmakers');
   }
 
+  if (filters.criticsVsFans === 'critics') {
+    parts.push(
+      'that are critically acclaimed — prioritize films with high ratings from discerning audiences, arthouse cinema, award contenders, and films respected by critics even if they had limited commercial release. Avoid pure blockbusters.',
+    );
+  } else if (filters.criticsVsFans === 'fans') {
+    parts.push(
+      'that are beloved by general audiences — prioritize crowd-pleasing films with massive popularity, high vote counts, and wide commercial appeal. Include beloved blockbusters, franchises, and mainstream hits.',
+    );
+  } else if (filters.criticsVsFans === 'both') {
+    parts.push(
+      'that are both critically respected and widely loved by audiences — prioritize films that score high on both quality and popularity, films that achieved crossover success with critics and mainstream audiences alike.',
+    );
+  }
+
   if (filters.oscarFilter === 'winner') {
     parts.push('that won the Academy Award for Best Picture');
   } else if (filters.oscarFilter === 'nominee') {

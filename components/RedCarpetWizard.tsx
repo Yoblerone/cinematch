@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight, Sparkles, Home, Dices } from 'lucide-react';
 import type { FilterState, Movie } from '@/lib/types';
 import { defaultFilters } from '@/lib/types';
-import { FILTER_WEIGHT_LOW, FILTER_WEIGHT_STOPS } from '@/lib/filterWeightSegments';
+import { FILTER_WEIGHT_LOW, FILTER_WEIGHT_HIGH } from '@/lib/filterWeightSegments';
 import { GENRE_OPTIONS } from '@/lib/optionSets';
 import type { Genre } from '@/lib/types';
 import Step1Basics from './wizard/Step1Basics';
@@ -220,33 +220,78 @@ export default function RedCarpetWizard() {
 
   /** Chaos Mode: one random genre + random energy/pedigree weights. */
   function generateRandomVibe(): FilterState {
-    const oneGenre: Genre = GENRE_OPTIONS[Math.floor(Math.random() * GENRE_OPTIONS.length)];
-    const pickSeg = () => FILTER_WEIGHT_STOPS[Math.floor(Math.random() * FILTER_WEIGHT_STOPS.length)];
+    // --- Genre: 1 genre (75%) or 2 genres (25%) ---
+    const shuffledGenres = [...GENRE_OPTIONS].sort(() => Math.random() - 0.5);
+    const genreCount = Math.random() < 0.25 ? 2 : 1;
+    const genre = shuffledGenres.slice(0, genreCount) as Genre[];
 
-    const narrative_pacing = pickSeg();
-    const emotional_tone = pickSeg();
-    const brain_power = pickSeg();
-    const visual_style = pickSeg();
-    const suspense_level = pickSeg();
-    const world_style = pickSeg();
+    // --- Energy sliders: activate 2 (40%) or 3 (60%) of the 6 axes.
+    // Only use LOW or HIGH — MED=50 is effectively neutral and wastes a slot.
+    const ENERGY_AXES = [
+      'narrative_pacing', 'emotional_tone', 'brain_power',
+      'visual_style', 'suspense_level', 'world_style',
+    ] as const;
+    const shuffledAxes = [...ENERGY_AXES].sort(() => Math.random() - 0.5);
+    const activeCount = Math.random() < 0.4 ? 2 : 3;
+    const activeAxes = new Set(shuffledAxes.slice(0, activeCount));
+    const pickExtreme = () => Math.random() < 0.5 ? FILTER_WEIGHT_LOW : FILTER_WEIGHT_HIGH;
+
+    const narrative_pacing = activeAxes.has('narrative_pacing') ? pickExtreme() : null;
+    const emotional_tone  = activeAxes.has('emotional_tone')  ? pickExtreme() : null;
+    const brain_power     = activeAxes.has('brain_power')     ? pickExtreme() : null;
+    const visual_style    = activeAxes.has('visual_style')    ? pickExtreme() : null;
+    const suspense_level  = activeAxes.has('suspense_level')  ? pickExtreme() : null;
+    const world_style     = activeAxes.has('world_style')     ? pickExtreme() : null;
+
+    // --- Pedigree filters: each activates ~35% of the time, independently.
+    // When both activate, align them (same direction) to avoid logical contradictions
+    // like A-list cast + unknown director or vice versa.
+    const castActive = Math.random() < 0.35;
+    const dirActive  = Math.random() < 0.35;
+    let aListCast: FilterState['aListCast'] = null;
+    let directorProminence: FilterState['directorProminence'] = null;
+    if (castActive && dirActive) {
+      const dir = Math.random() < 0.5 ? 'high' : 'low';
+      aListCast = dir;
+      directorProminence = dir;
+    } else if (castActive) {
+      aListCast = Math.random() < 0.5 ? 'high' : 'low';
+    } else if (dirActive) {
+      directorProminence = Math.random() < 0.5 ? 'high' : 'low';
+    }
+
+    // --- Optional decade: ~30% chance ---
+    const ALL_DECADES = ['60s', '70s', '80s', '90s', '2000s', '2010s', '2020s'] as const;
+    const decade: FilterState['decade'] = Math.random() < 0.3
+      ? [ALL_DECADES[Math.floor(Math.random() * ALL_DECADES.length)]]
+      : [];
+
+    // --- Optional critics/fans: ~20% chance ---
+    const CF_OPTIONS = ['critics', 'fans', 'both'] as const;
+    const criticsVsFans: FilterState['criticsVsFans'] = Math.random() < 0.2
+      ? CF_OPTIONS[Math.floor(Math.random() * CF_OPTIONS.length)]
+      : null;
 
     return {
       ...defaultFilters,
-      genre: [oneGenre],
+      genre,
+      decade,
+      aListCast,
+      directorProminence,
+      criticsVsFans,
       narrative_pacing,
       emotional_tone,
       brain_power,
       visual_style,
       suspense_level,
       world_style,
-      pacing: narrative_pacing,
-      cryMeter: emotional_tone,
-      humor: brain_power,
-      romance: visual_style,
-      suspense: suspense_level,
-      intensity: world_style,
-      aListCast: Math.random() > 0.5 ? 'high' : 'low',
-      directorProminence: Math.random() > 0.5 ? 'high' : 'low',
+      // Mirror into legacy aliases so ResultsView sliders display correctly.
+      pacing:    narrative_pacing ?? defaultFilters.pacing,
+      cryMeter:  emotional_tone   ?? defaultFilters.cryMeter,
+      humor:     brain_power      ?? defaultFilters.humor,
+      romance:   visual_style     ?? defaultFilters.romance,
+      suspense:  suspense_level   ?? defaultFilters.suspense,
+      intensity: world_style      ?? defaultFilters.intensity,
     };
   }
 
@@ -384,7 +429,7 @@ export default function RedCarpetWizard() {
                 title="Surprise Me (Chaos Mode)"
               >
                 <Dices className={`w-3.5 h-3.5 ${rollingDice ? 'animate-pulse' : ''}`} aria-hidden />
-                <span>{rollingDice ? 'Rolling the dice…' : 'Surprise Me'}</span>
+                <span className="hidden min-[360px]:inline">{rollingDice ? 'Rolling…' : 'Surprise Me'}</span>
               </button>
             </div>
           </div>

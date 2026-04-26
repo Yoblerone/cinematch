@@ -746,10 +746,47 @@ function stripAnimationFromWithoutGenres(smartHarvest: SmartHarvestQuerySlice | 
 }
 
 function calculatePedigreeScore(movie: Movie, filters: FilterState): number {
-  if (filters.oscarFilter == null) return 0;
-  if (filters.oscarFilter === 'winner') return movie.oscarWinner ? 20 : 0;
-  if (filters.oscarFilter === 'nominee') return movie.oscarNominee ? 20 : 0;
-  return movie.oscarWinner || movie.oscarNominee ? 20 : 0;
+  let score = 0;
+
+  // Oscar filter: flat +20 bonus for matching films.
+  if (filters.oscarFilter != null) {
+    if (filters.oscarFilter === 'winner') score += movie.oscarWinner ? 20 : 0;
+    else if (filters.oscarFilter === 'nominee') score += movie.oscarNominee ? 20 : 0;
+    else score += movie.oscarWinner || movie.oscarNominee ? 20 : 0;
+  }
+
+  // Director prominence: ±200 range so it meaningfully separates the pool.
+  // prestigeDirectorMatch returns 0–100; centering at 50 gives -200 to +200.
+  // slider=10 rewards fresh-face directors and penalises truth-list veterans;
+  // slider=90 does the opposite.
+  if (filters.directorProminence != null) {
+    const dirSlider = filters.directorProminence === 'high' ? 90 : 10;
+    const dirMatch = prestigeDirectorMatch(movie, dirSlider, PROMINENCE_TRUTH_LIST);
+    score += (dirMatch - 50) * 4;
+  }
+
+  // Critics vs Fans: reward movies whose audience profile matches the filter.
+  // movie.criticsVsFans is derived from rating + vote_count during enrichment:
+  //   'critics' = high rating, smaller audience (arthouse/indie)
+  //   'fans'    = high vote_count (blockbuster consensus)
+  //   'both'    = strongly rated AND widely voted
+  if (filters.criticsVsFans != null) {
+    const label = movie.criticsVsFans;
+    if (filters.criticsVsFans === 'critics') {
+      if (label === 'critics') score += 150;
+      else if (label === 'fans') score -= 100;
+      // 'both' is neutral (0)
+    } else if (filters.criticsVsFans === 'fans') {
+      if (label === 'fans') score += 150;
+      else if (label === 'critics') score -= 100;
+    } else if (filters.criticsVsFans === 'both') {
+      // Top Rated: reward movies that score high on both quality and engagement.
+      const topRatedScore = combinedTopRatedMatchScore(movie);
+      score += (topRatedScore - 50) * 2; // -100 to +100
+    }
+  }
+
+  return score;
 }
 
 async function fetchDiscoverRaw(
@@ -1403,16 +1440,23 @@ export async function getTmdbMatches(
    */
   if (filters.criticsVsFans != null) {
     if (filters.criticsVsFans === 'critics') {
+      // Sort by rating, lower vote floor (150) so acclaimed arthouse/indie films aren't excluded,
+      // and a 7.5 rating floor to ensure only genuinely critic-loved films enter the pool.
+      // Default path already uses vote_average.desc + 500 votes — this makes Critics meaningfully
+      // different by surfacing high-quality films that have smaller but more discerning audiences.
       baseParams.sortBy = 'vote_average.desc';
-      baseParams.voteCountGte = Math.max(baseParams.voteCountGte ?? 0, 500);
+      baseParams.voteCountGte = 150;
+      baseParams.voteAverageGte = 7.5;
       delete baseParams.voteCountLte;
     } else if (filters.criticsVsFans === 'fans') {
       baseParams.sortBy = 'vote_count.desc';
       baseParams.voteCountGte = Math.max(baseParams.voteCountGte ?? 0, 500);
       delete baseParams.voteCountLte;
     } else if (filters.criticsVsFans === 'both') {
+      // Top Rated: balance quality + engagement. Require strong ratings with broad audiences.
       baseParams.sortBy = 'vote_average.desc';
-      baseParams.voteCountGte = Math.max(baseParams.voteCountGte ?? 0, 500);
+      baseParams.voteCountGte = Math.max(baseParams.voteCountGte ?? 0, 1000);
+      baseParams.voteAverageGte = 7.0;
       delete baseParams.voteCountLte;
     }
   }
@@ -1448,13 +1492,27 @@ export async function getTmdbMatches(
   } else if (filters.aListCast === 'high') {
     discoverBase.voteCountGte = 5000;
   }
+
+  // Low director prominence: pull from the long tail (smaller films, quality-sorted).
+  // A vote_count ceiling of 8000 excludes most blockbusters while keeping well-loved
+  // indie/arthouse films. Combined with the ±200 pedigree penalty in calculatePedigreeScore,
+  // this ensures the pool itself contains fresh-face directors and doesn't just re-rank
+  // the same famous-director blockbuster pool.
+  if (filters.directorProminence === 'low' && filters.criticsVsFans == null) {
+    discoverBase.voteCountGte = Math.min(discoverBase.voteCountGte ?? 50, 50);
+    discoverBase.voteCountLte = 8000;
+    discoverBase.sortBy = 'vote_average.desc';
+    discoverBase.voteAverageGte = 6.5;
+  }
+
   const pacingMode = activePacingMode(filters);
   // No-drop warehouse rule: never use with_keywords in Discover URL.
   discoverBase.withKeywordsCsv = undefined;
   discoverBase.withKeywordsJoinMode = undefined;
 
   const indieDiscover =
-    filters.aListCast === 'low' && filters.criticsVsFans == null;
+    (filters.aListCast === 'low' || filters.directorProminence === 'low') &&
+    filters.criticsVsFans == null;
   const fansDiscover = filters.criticsVsFans === 'fans';
 
   /**

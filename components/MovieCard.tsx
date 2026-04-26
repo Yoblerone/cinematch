@@ -36,7 +36,7 @@ export default function MovieCard({ movie, index, variant = 'compact', matchPerc
       />
       <div
         className={`relative overflow-hidden ${
-          isFeatured ? 'h-56 sm:h-64' : 'h-32'
+          isFeatured ? 'h-56 sm:h-64' : 'h-28 sm:h-32'
         } bg-gradient-to-br ${movie.posterColor}`}
       >
         {posterUrl ? (
