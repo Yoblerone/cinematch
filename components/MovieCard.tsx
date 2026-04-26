@@ -94,11 +94,13 @@ export default function MovieCard({ movie, index, variant = 'compact', matchPerc
               : `Best Picture Nominee ${movie.academyAwardYear}`}
           </p>
         )}
-        <p
-          className={`text-cream/90 italic ${isFeatured ? 'text-sm mt-2' : 'text-xs mt-1'} line-clamp-2`}
-        >
-          &ldquo;{movie.tagline}&rdquo;
-        </p>
+        {movie.tagline && (
+          <p
+            className={`text-cream/90 italic ${isFeatured ? 'text-sm mt-2' : 'text-xs mt-1'} line-clamp-2`}
+          >
+            &ldquo;{movie.tagline}&rdquo;
+          </p>
+        )}
         {(movie.trailerKey != null && movie.trailerKey !== '') || movie.imdbId ? (
           <div
             className={`mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 ${isFeatured ? 'text-sm' : 'text-xs'}`}

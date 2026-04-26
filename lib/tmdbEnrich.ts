@@ -389,6 +389,37 @@ export async function fetchMovieDetails(apiKey: string, movieId: number): Promis
   }
 }
 
+/**
+ * Patch IMDb ID and trailer key onto any backfill films that bypassed enrichMovie.
+ * movieFromSearchResult (used in claudeRerank) only calls the TMDB Search endpoint which
+ * doesn't include imdb_id or videos. We fetch details for the small handful of such films.
+ */
+async function patchBackfillDetails(apiKey: string, movies: Movie[]): Promise<Movie[]> {
+  const needsPatch = movies.filter((m) => m.claudeSuggested && !m.imdbId);
+  if (needsPatch.length === 0) return movies;
+
+  const patchMap = new Map<string, Partial<Movie>>();
+  await Promise.all(
+    needsPatch.map(async (m) => {
+      const tmdbId = tmdbIdFromMovieId(m.id);
+      if (!tmdbId) return;
+      const details = await fetchMovieDetails(apiKey, tmdbId);
+      if (!details) return;
+      patchMap.set(m.id, {
+        imdbId: details.imdb_id ?? undefined,
+        trailerKey: extractYoutubeTrailerKey(details.videos) ?? null,
+        tagline: details.tagline?.trim() || m.tagline || '',
+      });
+    })
+  );
+
+  if (patchMap.size === 0) return movies;
+  return movies.map((m) => {
+    const patch = patchMap.get(m.id);
+    return patch ? { ...m, ...patch } : m;
+  });
+}
+
 export async function fetchMovieKeywords(apiKey: string, movieId: number): Promise<string[]> {
   try {
     const data = await fetchTmdb<TmdbKeywordsResponse>(apiKey, `/movie/${movieId}/keywords`);
@@ -519,7 +550,7 @@ export async function enrichMovie(
     title: details?.title ?? base.title,
     year,
     overview: overviewFull || undefined,
-    tagline: details?.tagline?.trim() || overviewFull.slice(0, 100) || '',
+    tagline: details?.tagline?.trim() || '',
     posterColor: 'from-slate-800 to-amber-900',
     posterPath: posterPath ?? undefined,
     crowd: [],
@@ -1263,7 +1294,26 @@ async function fetchAndEnrichByIds(
   }
 
   // Secondary filters active (vibe sliders, decade, etc.) — run Claude rerank for best ordering.
-  return claudeRerank(result, filters, apiKey);
+  // Strip any backfill films Claude adds from outside the Oscar truth list, then cap at 36.
+  // Patch badge fields on any backfilled film that bypassed enrichMovie (movieFromSearchResult
+  // doesn't set academyAwardYear/academyAwardType, so the card wouldn't show the Oscar tag).
+  const reranked = await claudeRerank(result, filters, apiKey);
+  const patchedReranked = await patchBackfillDetails(apiKey, reranked);
+  return patchedReranked
+    .filter((m) => allowed(tmdbIdFromMovieId(m.id)))
+    .map((m) => {
+      if (m.academyAwardYear != null) return m;
+      const info = getOscarAwardInfo(tmdbIdFromMovieId(m.id));
+      if (!info) return m;
+      return {
+        ...m,
+        academyAwardYear: info.year,
+        academyAwardType: info.type,
+        oscarWinner: info.type === 'Winner',
+        oscarNominee: true,
+      };
+    })
+    .slice(0, 36);
 }
 
 /** Live API: discover/movie with genres + runtime/decade; enrich → keyword-based vibe rank (no Discover keyword filter). */
@@ -1620,7 +1670,8 @@ export async function getTmdbMatches(
   const diversePool = applyFranchiseDiversityCap(pool);
   const animationCapPool = applyAnimationCap(diversePool, 5, activeBaselineGenres);
   const hasActiveVibe = AXES.some((axis) => filters[axis] != null) || activeBaselineGenres.length >= 2 || filters.aListCast != null || filters.directorProminence != null || filters.oscarFilter != null || filters.criticsVsFans != null;
-  const finalResults = hasActiveVibe ? await claudeRerank(animationCapPool, filters, apiKey) : animationCapPool.slice(0, 36);
+  const rerankResults = hasActiveVibe ? await claudeRerank(animationCapPool, filters, apiKey) : animationCapPool.slice(0, 36);
+  const finalResults = await patchBackfillDetails(apiKey, rerankResults);
   console.log('Total Movies Returned (deep-review vibe pool):', finalResults.length);
   return finalResults;
 }

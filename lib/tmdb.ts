@@ -377,7 +377,7 @@ export function mapTmdbToMovie(t: TmdbMovieResult): Movie {
     title: t.title,
     year: year || 0,
     overview: t.overview?.trim() ? t.overview.trim() : undefined,
-    tagline: t.overview?.slice(0, 120) ?? '',
+    tagline: '',
     posterColor: 'from-slate-800 to-amber-900',
     crowd: [],
     pacing: 50,
