@@ -76,6 +76,10 @@ function mergeSanitizedFilters(raw: Partial<FilterState>): FilterState {
   const crowd =
     raw.crowd === 'Solo' || raw.crowd === 'Date Night' || raw.crowd === 'Group' ? raw.crowd : null;
 
+  const rawOriginCountry = raw.originCountry;
+  const originCountry =
+    rawOriginCountry === 'us' || rawOriginCountry === 'international' ? rawOriginCountry : null;
+
   return {
     ...defaultFilters,
     crowd,
@@ -98,6 +102,7 @@ function mergeSanitizedFilters(raw: Partial<FilterState>): FilterState {
     decade,
     runtime,
     directorProminence: pedigreeBandOrNull(raw.directorProminence),
+    originCountry,
   };
 }
 
@@ -414,7 +419,7 @@ export default function RedCarpetWizard() {
                 title="Home (step 1)"
               >
                 <Home className="w-3.5 h-3.5" />
-                Home
+                <span className="hidden min-[360px]:inline">Home</span>
               </button>
             </div>
             <div className="flex justify-center shrink-0">
@@ -483,11 +488,13 @@ export default function RedCarpetWizard() {
                   genre={filters.genre}
                   decade={filters.decade.filter((d): d is NonNullable<typeof d> => d != null)}
                   runtime={filters.runtime}
+                  originCountry={filters.originCountry}
                   onGenreChange={(g) => updateFilters({ genre: g })}
                   onDecadeChange={(d) => updateFilters({ decade: d })}
                   onRuntimeChange={(r) => updateFilters({ runtime: r })}
+                  onOriginCountryChange={(c) => updateFilters({ originCountry: c })}
                   onResetStep={() =>
-                    updateFilters({ genre: [], decade: [], runtime: null })
+                    updateFilters({ genre: [], decade: [], runtime: null, originCountry: null })
                   }
                 />
               </motion.div>

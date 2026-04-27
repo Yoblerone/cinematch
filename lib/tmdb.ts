@@ -183,6 +183,8 @@ export interface TmdbDiscoverParams {
   voteAverageLte?: number;
   /** Energy sliders → genre OR / `without_genres` only (see `lib/smartHarvest.ts`). */
   smartHarvest?: SmartHarvestQuerySlice;
+  /** Filter by country of origin. 'us' = US only; 'international' = exclude US. */
+  originCountry?: 'us' | 'international' | null;
 }
 
 export interface TmdbMovieResult {
@@ -344,6 +346,12 @@ export function buildDiscoverSearchParams(params: TmdbDiscoverParams): Record<st
   if (params.voteAverageGte != null) q['vote_average.gte'] = String(params.voteAverageGte);
   if (params.voteAverageLte != null) q['vote_average.lte'] = String(params.voteAverageLte);
   if (sh?.withoutGenres) q.without_genres = sh.withoutGenres;
+
+  if (params.originCountry === 'us') {
+    q.with_origin_country = 'US';
+  } else if (params.originCountry === 'international') {
+    q.without_origin_country = 'US';
+  }
 
   if (q.with_genres && sh?.genrePrimaryHeadComma?.trim()) {
     const head = sh.genrePrimaryHeadComma

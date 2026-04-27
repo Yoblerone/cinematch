@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Film, Calendar, Clock } from 'lucide-react';
+import { Film, Calendar, Clock, Globe } from 'lucide-react';
 import type { Genre, Decade, Runtime } from '@/lib/types';
 import { GENRE_OPTIONS } from '@/lib/optionSets';
 import { MAX_GENRES } from '@/lib/types';
@@ -52,9 +52,11 @@ interface Step1BasicsProps {
   genre: Genre[];
   decade: (Decade & {})[];
   runtime: Runtime;
+  originCountry: 'us' | 'international' | null;
   onGenreChange: (g: Genre[]) => void;
   onDecadeChange: (d: (Decade & {})[]) => void;
   onRuntimeChange: (r: Runtime) => void;
+  onOriginCountryChange: (c: 'us' | 'international' | null) => void;
   onResetStep?: () => void;
 }
 
@@ -62,9 +64,11 @@ export default function Step1Basics({
   genre,
   decade,
   runtime,
+  originCountry,
   onGenreChange,
   onDecadeChange,
   onRuntimeChange,
+  onOriginCountryChange,
   onResetStep,
 }: Step1BasicsProps) {
   return (
@@ -147,6 +151,18 @@ export default function Step1Basics({
                 {label}
               </Chip>
             ))}
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-center gap-2 text-brass-light mb-3">
+            <Globe className="w-5 h-5" />
+            <span className="font-medium">Origin</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Chip selected={originCountry === null} onClick={() => onOriginCountryChange(null)}>Any</Chip>
+            <Chip selected={originCountry === 'us'} onClick={() => onOriginCountryChange('us')}>USA</Chip>
+            <Chip selected={originCountry === 'international'} onClick={() => onOriginCountryChange('international')}>International</Chip>
           </div>
         </div>
       </div>

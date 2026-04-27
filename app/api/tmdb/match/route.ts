@@ -63,6 +63,14 @@ export async function POST(request: NextRequest) {
     } else {
       filters = { ...filters, oscarFilter: null };
     }
+    const rawOriginCountry = (body as Record<string, unknown>).originCountry;
+    if (rawOriginCountry === 'us') {
+      filters = { ...filters, originCountry: 'us' };
+    } else if (rawOriginCountry === 'international') {
+      filters = { ...filters, originCountry: 'international' };
+    } else {
+      filters = { ...filters, originCountry: null };
+    }
     discoverStartPage = typeof body.discoverStartPage === 'number' && body.discoverStartPage >= 1 && body.discoverStartPage <= 10
       ? Math.floor(body.discoverStartPage)
       : undefined;

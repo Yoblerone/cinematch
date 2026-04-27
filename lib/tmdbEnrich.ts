@@ -6,7 +6,7 @@
 import type { Movie, Genre, Theme, VisualStyle, Soundtrack, CriticsVsFans, Decade } from './types';
 import type { FilterState } from './types';
 import type { TmdbMovieResult, TmdbDiscoverResponse } from './tmdb';
-import { GENRE_ID_TO_NAME, GENRE_NAME_TO_ID, buildDiscoverSearchParams, type SmartHarvestQuerySlice } from './tmdb';
+import { GENRE_ID_TO_NAME, GENRE_NAME_TO_ID, buildDiscoverSearchParams, mapTmdbToMovie, type SmartHarvestQuerySlice } from './tmdb';
 import { ENERGY_MANIFEST, type EnergyManifestAxis } from './scoring/energyManifest';
 import { scoreMovieDeclarative } from './scoring/thematicEngine';
 import {
@@ -631,6 +631,8 @@ type DiscoverFetchParams = {
   /** Raw comma-separated TMDB keyword IDs for Discover `without_keywords` (comma AND semantics). */
   withoutKeywordsCsv?: string;
   genreJoinMode?: 'and' | 'or';
+  /** Filter by country of origin. 'us' = US only; 'international' = non-US. */
+  originCountry?: 'us' | 'international' | null;
 };
 
 const PACING_FAST_KEYWORDS = [
@@ -809,6 +811,7 @@ async function fetchDiscoverRaw(
     voteAverageGte: params.voteAverageGte,
     voteAverageLte: params.voteAverageLte,
     smartHarvest: params.smartHarvest,
+    originCountry: params.originCountry ?? undefined,
   });
   if (params.primaryReleaseDateGte) q['primary_release_date.gte'] = params.primaryReleaseDateGte;
   if (params.withKeywordsCsv) {
@@ -1483,6 +1486,7 @@ export async function getTmdbMatches(
     popularityGte: baseParams.popularityGte,
     voteAverageGte: baseParams.voteAverageGte,
     voteAverageLte: baseParams.voteAverageLte,
+    originCountry: filters.originCountry,
   };
   if (filters.aListCast === 'low') {
     discoverBase.voteCountGte = 50;
@@ -1728,10 +1732,135 @@ export async function getTmdbMatches(
   const diversePool = applyFranchiseDiversityCap(pool);
   const animationCapPool = applyAnimationCap(diversePool, 5, activeBaselineGenres);
   const hasActiveVibe = AXES.some((axis) => filters[axis] != null) || activeBaselineGenres.length >= 2 || filters.aListCast != null || filters.directorProminence != null || filters.oscarFilter != null || filters.criticsVsFans != null;
-  const rerankResults = hasActiveVibe ? await claudeRerank(animationCapPool, filters, apiKey) : animationCapPool.slice(0, 36);
+
+  // Axis supplement pass: fetch fresh Discover pages per active energy axis so that changing
+  // any individual axis introduces genuinely new films into Claude's candidate pool.
+  const supplements = hasActiveVibe
+    ? await fetchAxisSupplements(apiKey, filters, discoverBase, animationCapPool)
+    : [];
+  const poolForRerank = supplements.length > 0
+    ? [...animationCapPool, ...supplements]
+    : animationCapPool;
+
+  const rerankResults = hasActiveVibe ? await claudeRerank(poolForRerank, filters, apiKey) : animationCapPool.slice(0, 36);
   const finalResults = await patchBackfillDetails(apiKey, rerankResults);
   console.log('Total Movies Returned (deep-review vibe pool):', finalResults.length);
   return finalResults;
+}
+
+/** Per-axis supplement Discover configs. Different sort + vote floors escape the main pool's monoculture. */
+type AxisSupplementConfig = {
+  sortBy: NonNullable<DiscoverFetchParams['sortBy']>;
+  voteCountGte?: number;
+  voteCountLte?: number;
+  voteAverageGte?: number;
+  pages: [number, number];
+};
+
+const AXIS_SUPPLEMENT: Record<string, Record<number, AxisSupplementConfig>> = {
+  narrative_pacing: {
+    20: { sortBy: 'vote_average.desc', voteCountGte: 50, voteCountLte: 2000, pages: [6, 12] },
+    50: { sortBy: 'popularity.desc', voteCountGte: 300, pages: [12, 18] },
+    90: { sortBy: 'vote_count.desc', voteCountGte: 8000, pages: [2, 5] },
+  },
+  emotional_tone: {
+    20: { sortBy: 'popularity.desc', voteCountGte: 500, pages: [6, 10] },
+    50: { sortBy: 'vote_average.desc', voteCountGte: 300, pages: [14, 20] },
+    90: { sortBy: 'vote_average.desc', voteCountGte: 150, voteAverageGte: 7.0, pages: [4, 8] },
+  },
+  brain_power: {
+    20: { sortBy: 'vote_count.desc', voteCountGte: 10000, pages: [3, 6] },
+    50: { sortBy: 'vote_count.desc', voteCountGte: 1500, pages: [8, 13] },
+    90: { sortBy: 'vote_average.desc', voteCountGte: 50, voteAverageGte: 7.8, pages: [2, 5] },
+  },
+  visual_style: {
+    20: { sortBy: 'vote_average.desc', voteCountGte: 80, voteCountLte: 2500, pages: [5, 10] },
+    50: { sortBy: 'popularity.desc', voteCountGte: 500, pages: [15, 21] },
+    90: { sortBy: 'revenue.desc', voteCountGte: 1000, pages: [1, 3] },
+  },
+  suspense_level: {
+    20: { sortBy: 'vote_average.desc', voteCountGte: 500, pages: [16, 22] },
+    50: { sortBy: 'popularity.desc', voteCountGte: 300, pages: [11, 16] },
+    90: { sortBy: 'vote_count.desc', voteCountGte: 2500, pages: [4, 7] },
+  },
+  world_style: {
+    20: { sortBy: 'vote_average.desc', voteCountGte: 300, pages: [9, 15] },
+    50: { sortBy: 'popularity.desc', voteCountGte: 300, pages: [17, 23] },
+    90: { sortBy: 'popularity.desc', voteCountGte: 500, pages: [3, 6] },
+  },
+};
+
+/**
+ * For each active energy axis, fetch 2 Discover pages with axis-specific sort/vote params.
+ * Results exclude IDs already in `existingPool`. Returned movies are lightweight stubs
+ * (no full enrichment) marked `claudeSuggested: true` so `patchBackfillDetails` lazy-enriches
+ * whichever ones Claude selects.
+ */
+async function fetchAxisSupplements(
+  apiKey: string,
+  filters: FilterState,
+  baseParams: DiscoverFetchParams,
+  existingPool: Movie[]
+): Promise<Movie[]> {
+  const existingIds = new Set<number>(
+    existingPool.map((m) => tmdbIdFromMovieId(m.id)).filter((n) => n > 0)
+  );
+
+  const fetchTasks: Array<{ page: number; config: AxisSupplementConfig }> = [];
+
+  for (const [axis, configs] of Object.entries(AXIS_SUPPLEMENT)) {
+    const axisValue = filters[axis as keyof FilterState] as number | null;
+    if (axisValue == null) continue;
+    const config = configs[axisValue];
+    if (!config) continue;
+    for (const page of config.pages) {
+      fetchTasks.push({ page, config });
+    }
+  }
+
+  if (fetchTasks.length === 0) return [];
+
+  const rawBatches = await Promise.all(
+    fetchTasks.map(({ page, config }) =>
+      fetchDiscoverRaw(
+        apiKey,
+        {
+          ...baseParams,
+          sortBy: config.sortBy,
+          voteCountGte: config.voteCountGte,
+          voteCountLte: config.voteCountLte,
+          voteAverageGte: config.voteAverageGte,
+          // Clear smartHarvest keywords — supplement fetches are vibe-agnostic (axis-specific only).
+          smartHarvest: undefined,
+          withKeywordsCsv: undefined,
+          withoutKeywordsCsv: undefined,
+        },
+        page
+      ).catch(() => ({ results: [] } as TmdbDiscoverResponse))
+    )
+  );
+
+  const seen = new Set<number>(existingIds);
+  const candidates: TmdbMovieResult[] = [];
+  for (const batch of rawBatches) {
+    for (const r of batch.results ?? []) {
+      if (!seen.has(r.id)) {
+        seen.add(r.id);
+        candidates.push(r);
+      }
+    }
+  }
+
+  const MAX_SUPPLEMENTS = 30;
+  return candidates.slice(0, MAX_SUPPLEMENTS).map((r) => {
+    const m = mapTmdbToMovie(r);
+    return {
+      ...m,
+      popularity: (r as { popularity?: number }).popularity ?? 0,
+      voteCount: (r as { vote_count?: number }).vote_count ?? 0,
+      claudeSuggested: true,
+    };
+  });
 }
 
 /**

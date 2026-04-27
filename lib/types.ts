@@ -206,6 +206,8 @@ export interface FilterState {
   runtime: Runtime;
   /** Null = Off (ignored). */
   directorProminence: 'low' | 'high' | null;
+  /** Null = any country. 'us' = US origin only; 'international' = non-US origin. */
+  originCountry: 'us' | 'international' | null;
 }
 
 export const defaultFilters: FilterState = {
@@ -229,4 +231,5 @@ export const defaultFilters: FilterState = {
   decade: [],
   runtime: null,
   directorProminence: null,
+  originCountry: null,
 };
