@@ -1893,7 +1893,7 @@ async function fetchAxisSupplements(
       // Combine user genres + overlay genres with pipe (OR) so the supplement surfaces
       // genre-adjacent films (e.g. Drama|Action for high-pacing Drama searches).
       const overlayIds = config.genreOverlay ?? [];
-      const combinedIds = [...new Set([...userGenreIds, ...overlayIds])];
+      const combinedIds = Array.from(new Set([...userGenreIds, ...overlayIds]));
       const withGenresRaw = combinedIds.length > 0 ? combinedIds.join('|') : undefined;
 
       // Runtime handled via SmartHarvestQuerySlice (the only path through buildDiscoverSearchParams).
