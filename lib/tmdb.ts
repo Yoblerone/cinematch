@@ -183,8 +183,8 @@ export interface TmdbDiscoverParams {
   voteAverageLte?: number;
   /** Energy sliders → genre OR / `without_genres` only (see `lib/smartHarvest.ts`). */
   smartHarvest?: SmartHarvestQuerySlice;
-  /** Filter by country of origin. 'us' = US only; 'international' = exclude US. */
-  originCountry?: 'us' | 'international' | null;
+  /** Filter by country of origin. */
+  originCountry?: 'us' | 'international-english' | 'international-nonenglish' | null;
 }
 
 export interface TmdbMovieResult {

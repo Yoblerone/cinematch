@@ -632,7 +632,7 @@ type DiscoverFetchParams = {
   withoutKeywordsCsv?: string;
   genreJoinMode?: 'and' | 'or';
   /** Filter by country of origin. 'us' = US only; 'international' = non-US. */
-  originCountry?: 'us' | 'international' | null;
+  originCountry?: 'us' | 'international-english' | 'international-nonenglish' | null;
   /**
    * Raw TMDB `with_genres` string (pipe = OR, comma = AND). Overrides genre + genreJoinMode when set.
    * Used by axis supplement fetches to combine user genres with overlay genres using OR.
