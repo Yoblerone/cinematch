@@ -300,16 +300,16 @@ export default function DirectorsConsole({
                   <div>
                     <label className="block text-sm font-medium text-brass-light mb-2">Origin</label>
                     <div className="flex gap-2">
-                      {([null, 'us', 'international'] as const).map((v) => (
+                      {(['us', 'international'] as const).map((v) => (
                         <button
-                          key={String(v)}
+                          key={v}
                           type="button"
-                          onClick={() => onUpdate({ originCountry: v })}
+                          onClick={() => onUpdate({ originCountry: filters.originCountry === v ? null : v })}
                           className={`px-3 py-1.5 rounded-sm border-2 text-sm transition-all duration-300 ${
                             filters.originCountry === v ? 'border-brass bg-brass/15 text-neon-gold shadow-[0_0_20px_rgba(184,134,11,0.4)]' : 'border-brass/50 text-cream hover:border-brass hover:text-brass-light'
                           }`}
                         >
-                          {v == null ? 'Any' : v === 'us' ? 'USA' : 'International'}
+                          {v === 'us' ? 'Hollywood' : 'Everywhere Else'}
                         </button>
                       ))}
                     </div>

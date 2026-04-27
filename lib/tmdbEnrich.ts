@@ -633,6 +633,13 @@ type DiscoverFetchParams = {
   genreJoinMode?: 'and' | 'or';
   /** Filter by country of origin. 'us' = US only; 'international' = non-US. */
   originCountry?: 'us' | 'international' | null;
+  /**
+   * Raw TMDB `with_genres` string (pipe = OR, comma = AND). Overrides genre + genreJoinMode when set.
+   * Used by axis supplement fetches to combine user genres with overlay genres using OR.
+   */
+  withGenresRaw?: string;
+  /** Genre IDs appended to `without_genres` (comma-joined AND semantics). */
+  withoutGenreIds?: number[];
 };
 
 const PACING_FAST_KEYWORDS = [
@@ -813,6 +820,11 @@ async function fetchDiscoverRaw(
     smartHarvest: params.smartHarvest,
     originCountry: params.originCountry ?? undefined,
   });
+  if (params.withGenresRaw) q.with_genres = params.withGenresRaw;
+  if (params.withoutGenreIds?.length) {
+    const existing = q.without_genres ? `${q.without_genres},` : '';
+    q.without_genres = `${existing}${params.withoutGenreIds.join(',')}`;
+  }
   if (params.primaryReleaseDateGte) q['primary_release_date.gte'] = params.primaryReleaseDateGte;
   if (params.withKeywordsCsv) {
     q.with_keywords = joinKeywordCsv(params.withKeywordsCsv, params.withKeywordsJoinMode ?? 'and');
@@ -1586,59 +1598,77 @@ export async function getTmdbMatches(
     ),
   );
 
-  // Warehouse pull:
-  // - Single genre: keep broad baseline pages 1-10.
-  // - Multi genre: FIRST fetch with combined AND query (true intersections), THEN supplement
-  //   with individual genre pages. This ensures niche combos like Documentary+War get genuine
-  //   matches before falling back to single-genre representatives.
-  let allMovies: TmdbMovieResult[] = [];
-  if (activeBaselineGenres.length >= 2) {
-    // Step 1: combined AND query — films tagged with ALL selected genres simultaneously.
-    const andBase: DiscoverFetchParams = { ...anchorBase, genre: activeBaselineGenres, genreJoinMode: 'and' };
-    const andRows = await Promise.all([1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((page) => fetchDiscoverRaw(apiKey, andBase, page)));
-    allMovies = dedupeDiscoverRows(andRows.flatMap((d) => d.results ?? []));
+  // Axis-first baseline: two sort passes × 3 pages each produce a quality/popularity split
+  // with genuinely different film profiles. A random 0-or-1 page-start offset ensures
+  // repeated identical searches don't always return the exact same set.
+  const baseRandOffset = Math.floor(Math.random() * 2); // 0 or 1
+  const qualBase: DiscoverFetchParams = { ...discoverBase, sortBy: 'vote_average.desc' };
+  const BASELINE_TARGET = 60; // enrichment target — we'll score and take top 40 for Claude
 
-    // Step 2: supplement with per-genre pages if combined pool is thin.
-    if (allMovies.length < DEEP_POOL_MAX) {
+  let allMovies: TmdbMovieResult[] = [];
+
+  if (activeBaselineGenres.length >= 2) {
+    // Multi-genre: AND intersection pages + quality sort pass.
+    const andBase: DiscoverFetchParams = { ...anchorBase, genre: activeBaselineGenres, genreJoinMode: 'and' };
+    const andQualBase: DiscoverFetchParams = { ...qualBase, genre: activeBaselineGenres, genreJoinMode: 'and' };
+    const popPages = [1 + baseRandOffset, 2 + baseRandOffset, 3 + baseRandOffset, 4 + baseRandOffset, 5 + baseRandOffset];
+    const qualPages = [1, 2, 3];
+    const [popRows, qualRows] = await Promise.all([
+      Promise.all(popPages.map((page) => fetchDiscoverRaw(apiKey, andBase, page))),
+      Promise.all(qualPages.map((page) => fetchDiscoverRaw(apiKey, andQualBase, page))),
+    ]);
+    allMovies = dedupeDiscoverRows([
+      ...popRows.flatMap((d) => d.results ?? []),
+      ...qualRows.flatMap((d) => d.results ?? []),
+    ]);
+
+    // Per-genre supplement if combined pool is thin.
+    if (allMovies.length < BASELINE_TARGET) {
       const perGenreRows = await Promise.all(
         activeBaselineGenres.flatMap((genre) =>
-          [1, 2, 3, 4, 5].map((page) =>
+          [1, 2, 3].map((page) =>
             fetchDiscoverRaw(apiKey, { ...anchorBase, genre: [genre], genreJoinMode: 'and' }, page),
           ),
         ),
       );
       allMovies = dedupeDiscoverRows([...allMovies, ...perGenreRows.flatMap((d) => d.results ?? [])]);
     }
+
+    // OR fallback if still thin.
+    if (allMovies.length < BASELINE_TARGET) {
+      genreJoinMode = 'or';
+      const orBase: DiscoverFetchParams = { ...anchorBase, genreJoinMode: 'or' };
+      const orRows = await Promise.all([1, 2, 3].map((page) => fetchDiscoverRaw(apiKey, orBase, page)));
+      allMovies = dedupeDiscoverRows([...allMovies, ...orRows.flatMap((d) => d.results ?? [])]);
+    }
   } else {
-    const singleRows = await Promise.all([1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((page) => fetchDiscoverRaw(apiKey, anchorBase, page)));
-    allMovies = dedupeDiscoverRows(singleRows.flatMap((d) => d.results ?? []));
+    // Single genre: popularity sort (random start) + quality sort (always page 1–3).
+    const popPages = [1 + baseRandOffset, 2 + baseRandOffset, 3 + baseRandOffset];
+    const qualPages = [1, 2, 3];
+    const [popRows, qualRows] = await Promise.all([
+      Promise.all(popPages.map((page) => fetchDiscoverRaw(apiKey, anchorBase, page))),
+      Promise.all(qualPages.map((page) => fetchDiscoverRaw(apiKey, qualBase, page))),
+    ]);
+    allMovies = dedupeDiscoverRows([
+      ...popRows.flatMap((d) => d.results ?? []),
+      ...qualRows.flatMap((d) => d.results ?? []),
+    ]);
   }
 
-  // Multi-genre fallback: widen from AND to OR if pool is still thin after combined+per-genre fetches.
-  if (allMovies.length < DEEP_POOL_MAX && activeBaselineGenres.length >= 2) {
-    genreJoinMode = 'or';
-    const orBase: DiscoverFetchParams = { ...anchorBase, genreJoinMode: 'or' };
-    const orRows = await Promise.all([1, 2, 3, 4, 5].map((page) => fetchDiscoverRaw(apiKey, orBase, page)));
-    allMovies = dedupeDiscoverRows([...allMovies, ...orRows.flatMap((d) => d.results ?? [])]);
-  }
-
-  // Hard 100 guarantee: keep backfilling next anchor pages until we have enough rows.
-  let nextPage = activeBaselineGenres.length >= 2 ? 6 : 11;
-  while (allMovies.length < DEEP_POOL_MAX && nextPage <= 60) {
-    const extra = await fetchDiscoverRaw(
-      apiKey,
-      { ...anchorBase, genreJoinMode },
-      nextPage
-    );
+  // Hard baseline guarantee: keep fetching if pool is thin.
+  let nextPage = activeBaselineGenres.length >= 2 ? 6 : 4;
+  while (allMovies.length < BASELINE_TARGET && nextPage <= 25) {
+    const extra = await fetchDiscoverRaw(apiKey, { ...anchorBase, genreJoinMode }, nextPage);
     allMovies = dedupeDiscoverRows([...allMovies, ...(extra.results ?? [])]);
     nextPage += 1;
   }
 
-  console.log('[Discover] Warehouse baseline pool', {
+  console.log('[Discover] Axis-first baseline pool', {
     genres: activeBaselineGenres,
     decade: baseParams.decade,
     genreJoinMode,
     totalRows: allMovies.length,
+    randOffset: baseRandOffset,
   });
 
   // Enrich full baseline pool; vibe only affects local rank, never deletion.
@@ -1733,68 +1763,101 @@ export async function getTmdbMatches(
   const animationCapPool = applyAnimationCap(diversePool, 5, activeBaselineGenres);
   const hasActiveVibe = AXES.some((axis) => filters[axis] != null) || activeBaselineGenres.length >= 2 || filters.aListCast != null || filters.directorProminence != null || filters.oscarFilter != null || filters.criticsVsFans != null;
 
-  // Axis supplement pass: fetch fresh Discover pages per active energy axis so that changing
-  // any individual axis introduces genuinely new films into Claude's candidate pool.
+  // Claude receives exactly 60 candidates: top 40 scored baseline + up to 20 axis supplements.
+  // Axis supplements use genre overlays / runtime bands so each axis value surfaces genuinely
+  // different films — changing Low ↔ High on any axis shifts ~20 of the 60 candidates.
+  const BASELINE_CLAUDE_CAP = 40;
+  const SUPPLEMENT_CLAUDE_CAP = 20;
+  const baselineForClaude = animationCapPool.slice(0, BASELINE_CLAUDE_CAP);
+
   const supplements = hasActiveVibe
-    ? await fetchAxisSupplements(apiKey, filters, discoverBase, animationCapPool)
+    ? await fetchAxisSupplements(apiKey, filters, discoverBase, baselineForClaude)
     : [];
   const poolForRerank = supplements.length > 0
-    ? [...animationCapPool, ...supplements]
-    : animationCapPool;
+    ? [...baselineForClaude, ...supplements.slice(0, SUPPLEMENT_CLAUDE_CAP)]
+    : baselineForClaude;
 
-  const rerankResults = hasActiveVibe ? await claudeRerank(poolForRerank, filters, apiKey) : animationCapPool.slice(0, 36);
+  const rerankResults = hasActiveVibe ? await claudeRerank(poolForRerank, filters, apiKey) : baselineForClaude.slice(0, 36);
   const finalResults = await patchBackfillDetails(apiKey, rerankResults);
   console.log('Total Movies Returned (deep-review vibe pool):', finalResults.length);
   return finalResults;
 }
 
-/** Per-axis supplement Discover configs. Different sort + vote floors escape the main pool's monoculture. */
+/**
+ * Per-axis supplement Discover config. Each entry uses genre overlays, runtime bands, and
+ * vote thresholds to surface films that genuinely differ between LOW / MED / HIGH axis values.
+ * Genre overlays are combined with user genres using OR, so the supplement fetches from a
+ * related genre space without discarding the user's primary genre.
+ */
 type AxisSupplementConfig = {
   sortBy: NonNullable<DiscoverFetchParams['sortBy']>;
   voteCountGte?: number;
   voteCountLte?: number;
   voteAverageGte?: number;
-  pages: [number, number];
+  /** Minimum runtime in minutes (TMDB with_runtime.gte). */
+  runtimeGte?: number;
+  /** Maximum runtime in minutes (TMDB with_runtime.lte). */
+  runtimeLte?: number;
+  /** TMDB genre IDs to OR with user-selected genres (widens the Discover result space). */
+  genreOverlay?: number[];
+  /** TMDB genre IDs to add to without_genres (narrows away off-axis genres). */
+  withoutGenres?: number[];
+  pages: [number, number, number];
 };
 
 const AXIS_SUPPLEMENT: Record<string, Record<number, AxisSupplementConfig>> = {
+  // Narrative Pacing: low = slow-burn arthouse (long runtime, low vote count, no action);
+  //                   high = fast-paced (action/thriller overlay, short runtime, high vote count).
   narrative_pacing: {
-    20: { sortBy: 'vote_average.desc', voteCountGte: 50, voteCountLte: 2000, pages: [6, 12] },
-    50: { sortBy: 'popularity.desc', voteCountGte: 300, pages: [12, 18] },
-    90: { sortBy: 'vote_count.desc', voteCountGte: 8000, pages: [2, 5] },
+    20: { sortBy: 'vote_average.desc', voteCountGte: 50, voteCountLte: 3000, runtimeGte: 110, withoutGenres: [28], pages: [1, 2, 3] },
+    50: { sortBy: 'vote_average.desc', voteCountGte: 500, pages: [8, 12, 16] },
+    90: { sortBy: 'vote_count.desc', voteCountGte: 3000, runtimeLte: 130, genreOverlay: [28, 53], pages: [1, 2, 3] },
   },
+  // Emotional Tone: low = light/cheerful (comedy overlay, popular, no horror);
+  //                 high = heavy/dark (high rating floor, no comedy/animation).
   emotional_tone: {
-    20: { sortBy: 'popularity.desc', voteCountGte: 500, pages: [6, 10] },
-    50: { sortBy: 'vote_average.desc', voteCountGte: 300, pages: [14, 20] },
-    90: { sortBy: 'vote_average.desc', voteCountGte: 150, voteAverageGte: 7.0, pages: [4, 8] },
+    20: { sortBy: 'popularity.desc', voteCountGte: 500, genreOverlay: [35], withoutGenres: [27], pages: [1, 2, 3] },
+    50: { sortBy: 'vote_average.desc', voteCountGte: 300, pages: [9, 13, 17] },
+    90: { sortBy: 'vote_average.desc', voteCountGte: 100, voteAverageGte: 7.0, withoutGenres: [35, 16], pages: [1, 2, 3] },
   },
+  // Brain Power: low = mass-market crowd pleasers (very high vote count);
+  //              high = acclaimed niche (low vote count, high rating floor — surfaces arthouse/festival films).
   brain_power: {
-    20: { sortBy: 'vote_count.desc', voteCountGte: 10000, pages: [3, 6] },
-    50: { sortBy: 'vote_count.desc', voteCountGte: 1500, pages: [8, 13] },
-    90: { sortBy: 'vote_average.desc', voteCountGte: 50, voteAverageGte: 7.8, pages: [2, 5] },
+    20: { sortBy: 'vote_count.desc', voteCountGte: 10000, pages: [1, 2, 3] },
+    50: { sortBy: 'vote_count.desc', voteCountGte: 1500, pages: [6, 10, 14] },
+    90: { sortBy: 'vote_average.desc', voteCountGte: 50, voteCountLte: 5000, voteAverageGte: 7.5, pages: [1, 2, 3] },
   },
+  // Visual Style: low = intimate/handheld (indie-scale, short runtime, low vote count);
+  //               high = cinematic/epic (adventure overlay, high revenue proxy, longer runtime).
   visual_style: {
-    20: { sortBy: 'vote_average.desc', voteCountGte: 80, voteCountLte: 2500, pages: [5, 10] },
-    50: { sortBy: 'popularity.desc', voteCountGte: 500, pages: [15, 21] },
-    90: { sortBy: 'revenue.desc', voteCountGte: 1000, pages: [1, 3] },
+    20: { sortBy: 'vote_average.desc', voteCountGte: 50, voteCountLte: 2000, runtimeLte: 120, pages: [1, 2, 3] },
+    50: { sortBy: 'popularity.desc', voteCountGte: 300, pages: [11, 15, 19] },
+    90: { sortBy: 'revenue.desc', voteCountGte: 1000, runtimeGte: 110, genreOverlay: [12], pages: [1, 2, 3] },
   },
+  // Suspense Level: low = relaxed/low-tension (comedy overlay, exclude thriller/horror);
+  //                 high = tense (thriller overlay, high vote count = mainstream thrillers).
   suspense_level: {
-    20: { sortBy: 'vote_average.desc', voteCountGte: 500, pages: [16, 22] },
-    50: { sortBy: 'popularity.desc', voteCountGte: 300, pages: [11, 16] },
-    90: { sortBy: 'vote_count.desc', voteCountGte: 2500, pages: [4, 7] },
+    20: { sortBy: 'vote_average.desc', voteCountGte: 300, genreOverlay: [35], withoutGenres: [53, 27], pages: [1, 2, 3] },
+    50: { sortBy: 'vote_average.desc', voteCountGte: 300, pages: [12, 16, 20] },
+    90: { sortBy: 'vote_count.desc', voteCountGte: 2000, genreOverlay: [53], pages: [1, 2, 3] },
   },
+  // World Style: low = grounded/realistic (history overlay, exclude sci-fi/fantasy);
+  //              high = fantastical/surreal (sci-fi + fantasy overlay, popular tier).
   world_style: {
-    20: { sortBy: 'vote_average.desc', voteCountGte: 300, pages: [9, 15] },
-    50: { sortBy: 'popularity.desc', voteCountGte: 300, pages: [17, 23] },
-    90: { sortBy: 'popularity.desc', voteCountGte: 500, pages: [3, 6] },
+    20: { sortBy: 'vote_average.desc', voteCountGte: 100, genreOverlay: [36], withoutGenres: [878, 14], pages: [1, 2, 3] },
+    50: { sortBy: 'popularity.desc', voteCountGte: 300, pages: [13, 17, 21] },
+    90: { sortBy: 'popularity.desc', voteCountGte: 200, genreOverlay: [878, 14], pages: [1, 2, 3] },
   },
 };
 
 /**
- * For each active energy axis, fetch 2 Discover pages with axis-specific sort/vote params.
- * Results exclude IDs already in `existingPool`. Returned movies are lightweight stubs
- * (no full enrichment) marked `claudeSuggested: true` so `patchBackfillDetails` lazy-enriches
- * whichever ones Claude selects.
+ * For each active energy axis, fetch 3 targeted Discover pages using genre overlays, runtime
+ * bands, and vote thresholds specific to that axis value. Results exclude IDs already in
+ * `existingPool`. Returned movies are lightweight stubs (no full enrichment) marked
+ * `claudeSuggested: true` so `patchBackfillDetails` lazy-enriches whichever ones Claude selects.
+ *
+ * Genre overlays are combined with user genres using OR so supplements stay genre-adjacent
+ * without restricting to the exact user genre — Claude's prompt enforces genre compliance.
  */
 async function fetchAxisSupplements(
   apiKey: string,
@@ -1805,6 +1868,11 @@ async function fetchAxisSupplements(
   const existingIds = new Set<number>(
     existingPool.map((m) => tmdbIdFromMovieId(m.id)).filter((n) => n > 0)
   );
+
+  // Build base genre ID set from user-selected genres.
+  const userGenreIds = (baseParams.genre ?? [])
+    .map((g) => GENRE_NAME_TO_ID[g])
+    .filter((id): id is number => id != null);
 
   const fetchTasks: Array<{ page: number; config: AxisSupplementConfig }> = [];
 
@@ -1821,23 +1889,43 @@ async function fetchAxisSupplements(
   if (fetchTasks.length === 0) return [];
 
   const rawBatches = await Promise.all(
-    fetchTasks.map(({ page, config }) =>
-      fetchDiscoverRaw(
+    fetchTasks.map(({ page, config }) => {
+      // Combine user genres + overlay genres with pipe (OR) so the supplement surfaces
+      // genre-adjacent films (e.g. Drama|Action for high-pacing Drama searches).
+      const overlayIds = config.genreOverlay ?? [];
+      const combinedIds = [...new Set([...userGenreIds, ...overlayIds])];
+      const withGenresRaw = combinedIds.length > 0 ? combinedIds.join('|') : undefined;
+
+      // Runtime handled via SmartHarvestQuerySlice (the only path through buildDiscoverSearchParams).
+      const runtimeSlice =
+        config.runtimeGte != null || config.runtimeLte != null
+          ? {
+              withKeywordIds: [] as number[],
+              withoutKeywordIds: [] as number[],
+              withRuntimeGte: config.runtimeGte,
+              withRuntimeLte: config.runtimeLte,
+            }
+          : undefined;
+
+      return fetchDiscoverRaw(
         apiKey,
         {
           ...baseParams,
+          genre: [], // clear — withGenresRaw takes over
+          genreJoinMode: undefined,
+          withGenresRaw,
+          withoutGenreIds: config.withoutGenres,
           sortBy: config.sortBy,
           voteCountGte: config.voteCountGte,
           voteCountLte: config.voteCountLte,
           voteAverageGte: config.voteAverageGte,
-          // Clear smartHarvest keywords — supplement fetches are vibe-agnostic (axis-specific only).
-          smartHarvest: undefined,
+          smartHarvest: runtimeSlice,
           withKeywordsCsv: undefined,
           withoutKeywordsCsv: undefined,
         },
         page
-      ).catch(() => ({ results: [] } as TmdbDiscoverResponse))
-    )
+      ).catch(() => ({ results: [] } as TmdbDiscoverResponse));
+    })
   );
 
   const seen = new Set<number>(existingIds);
@@ -1851,8 +1939,9 @@ async function fetchAxisSupplements(
     }
   }
 
-  const MAX_SUPPLEMENTS = 30;
-  return candidates.slice(0, MAX_SUPPLEMENTS).map((r) => {
+  // Cap candidates here; caller further limits to SUPPLEMENT_CLAUDE_CAP slots.
+  const MAX_SUPPLEMENT_CANDIDATES = 60;
+  return candidates.slice(0, MAX_SUPPLEMENT_CANDIDATES).map((r) => {
     const m = mapTmdbToMovie(r);
     return {
       ...m,

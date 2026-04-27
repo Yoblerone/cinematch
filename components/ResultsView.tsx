@@ -62,16 +62,25 @@ interface ResultsViewProps {
   rollingDice?: boolean;
 }
 
+/** Escape a single CSV cell value: always wraps in quotes to handle commas and special chars. */
+function csvCell(value: string | number): string {
+  return `"${String(value).replace(/"/g, '""')}"`;
+}
+
 function buildCsvExport(filters: FilterState, results: Movie[]): string {
   const now = new Date();
-  const dateStr = now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  // Use local date/time parts to avoid UTC-vs-local date shift.
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const year = now.getFullYear();
+  const dateStr = `${month}/${day}/${year}`;
   const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
   const paramLines: string[] = [];
   if (filters.genre.length > 0) paramLines.push(`Genre: ${filters.genre.join(' + ')}`);
   if (filters.decade.length > 0) paramLines.push(`Decade: ${filters.decade.join(', ')}`);
   if (filters.runtime) paramLines.push(`Runtime: ${filters.runtime}`);
-  if (filters.originCountry) paramLines.push(`Origin: ${filters.originCountry === 'us' ? 'USA' : 'International'}`);
+  if (filters.originCountry) paramLines.push(`Origin: ${filters.originCountry === 'us' ? 'Hollywood' : 'Everywhere Else'}`);
   if (filters.oscarFilter) paramLines.push(`Best Picture: ${filters.oscarFilter}`);
   if (filters.aListCast) paramLines.push(`A-List Cast: ${filters.aListCast}`);
   if (filters.directorProminence) paramLines.push(`Director Prominence: ${filters.directorProminence}`);
@@ -83,20 +92,22 @@ function buildCsvExport(filters: FilterState, results: Movie[]): string {
   if (filters.suspense_level != null) paramLines.push(`Suspense Level: ${filters.suspense_level}`);
   if (filters.world_style != null) paramLines.push(`World Style: ${filters.world_style}`);
 
+  const paramSummary = paramLines.length > 0 ? paramLines.join(' | ') : '(none)';
+
+  // Column A = descriptor, Column B = value (two-column layout, safe for Excel).
   const header = [
     `Cinematch Export`,
-    `Date: ${dateStr}`,
-    `Time: ${timeStr}`,
-    paramLines.length > 0 ? `Search Parameters: ${paramLines.join(' | ')}` : 'Search Parameters: (none)',
-    `Total Results: ${results.length}`,
+    `Date,${csvCell(dateStr)}`,
+    `Time,${csvCell(timeStr)}`,
+    `Search Parameters,${csvCell(paramSummary)}`,
+    `Total Results,${results.length}`,
     ``,
     `Rank,Title,Year,Match %`,
   ].join('\n');
 
-  const rows = results.map((m, i) => {
-    const title = m.title.includes(',') ? `"${m.title.replace(/"/g, '""')}"` : m.title;
-    return `${i + 1},${title},${m.year ?? ''},${m.matchPercentage ?? ''}`;
-  });
+  const rows = results.map((m, i) =>
+    `${i + 1},${csvCell(m.title)},${m.year ?? ''},${m.matchPercentage ?? ''}`
+  );
 
   return `${header}\n${rows.join('\n')}`;
 }
@@ -109,6 +120,14 @@ function downloadCsv(content: string, filename: string): void {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function buildCsvFilename(): string {
+  const now = new Date();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const yyyy = now.getFullYear();
+  return `cinematch-${mm}-${dd}-${yyyy}.csv`;
 }
 
 export default function ResultsView({
@@ -186,7 +205,7 @@ export default function ResultsView({
               <div className="flex shrink-0 justify-center">
                 <MarqueeLogo text="CINEMATCH" />
               </div>
-              <div className="flex min-w-0 items-center justify-center gap-2">
+              <div className="flex min-w-0 justify-center">
                 {onSurpriseMe && (
                   <button
                     type="button"
@@ -199,20 +218,6 @@ export default function ResultsView({
                     <span className="hidden min-[360px]:inline">{rollingDice ? 'Rolling…' : 'Surprise Me'}</span>
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    const csv = buildCsvExport(filters, results);
-                    const ts = new Date().toISOString().slice(0, 10);
-                    downloadCsv(csv, `cinematch-${ts}.csv`);
-                  }}
-                  disabled={results.length === 0}
-                  className="flex min-h-[36px] items-center gap-1.5 rounded-sm border-2 border-brass/50 px-3 py-1.5 text-sm font-medium text-brass-light transition-all hover:border-brass hover:bg-brass/10 touch-manipulation disabled:cursor-not-allowed disabled:opacity-40"
-                  title="Export results to CSV"
-                >
-                  <Download className="w-3.5 h-3.5" aria-hidden />
-                  <span className="hidden min-[360px]:inline">Export</span>
-                </button>
               </div>
             </div>
           </div>
@@ -221,10 +226,25 @@ export default function ResultsView({
           </div>
         </header>
         {showRankedIntro && (
-          <div className="flex justify-center px-4 py-2 sm:px-6">
+          <div className="flex items-center justify-between px-4 py-2 sm:px-6">
+            <div className="w-20 shrink-0" />
             <p className="text-center text-sm text-antique">
               Ranked from best match onward. Your top picks are listed first.
             </p>
+            <div className="flex w-20 shrink-0 justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  const csv = buildCsvExport(filters, results);
+                  downloadCsv(csv, buildCsvFilename());
+                }}
+                className="flex items-center gap-1 rounded-sm border border-brass/40 px-2 py-1 text-xs text-brass-light transition-all hover:border-brass hover:bg-brass/10 touch-manipulation"
+                title="Export results to CSV"
+              >
+                <Download className="w-3 h-3" aria-hidden />
+                <span className="hidden min-[360px]:inline">Export</span>
+              </button>
+            </div>
           </div>
         )}
       </div>
