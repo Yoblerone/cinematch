@@ -1924,7 +1924,7 @@ async function fetchAxisSupplements(
           withoutKeywordsCsv: undefined,
         },
         page
-      ).catch(() => ({ results: [] } as TmdbDiscoverResponse));
+      ).catch(() => ({ results: [], page: 1, total_pages: 0, total_results: 0 } as TmdbDiscoverResponse));
     })
   );
 

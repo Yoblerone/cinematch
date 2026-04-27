@@ -226,24 +226,26 @@ export default function ResultsView({
           </div>
         </header>
         {showRankedIntro && (
-          <div className="flex items-center justify-between px-4 py-2 sm:px-6">
-            <div className="w-20 shrink-0" />
-            <p className="text-center text-sm text-antique">
-              Ranked from best match onward. Your top picks are listed first.
-            </p>
-            <div className="flex w-20 shrink-0 justify-end">
-              <button
-                type="button"
-                onClick={() => {
-                  const csv = buildCsvExport(filters, results);
-                  downloadCsv(csv, buildCsvFilename());
-                }}
-                className="flex items-center gap-1 rounded-sm border border-brass/40 px-2 py-1 text-xs text-brass-light transition-all hover:border-brass hover:bg-brass/10 touch-manipulation"
-                title="Export results to CSV"
-              >
-                <Download className="w-3 h-3" aria-hidden />
-                <span className="hidden min-[360px]:inline">Export</span>
-              </button>
+          <div className="px-4 py-2 sm:px-6">
+            <div className="mx-auto flex w-full max-w-4xl items-center justify-between">
+              <div className="w-20 shrink-0" />
+              <p className="text-center text-sm text-antique">
+                Ranked from best match onward. Your top picks are listed first.
+              </p>
+              <div className="flex w-20 shrink-0 justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const csv = buildCsvExport(filters, results);
+                    downloadCsv(csv, buildCsvFilename());
+                  }}
+                  className="flex items-center gap-1 rounded-sm border border-brass/40 px-2 py-1 text-xs text-brass-light transition-all hover:border-brass hover:bg-brass/10 touch-manipulation"
+                  title="Export results to CSV"
+                >
+                  <Download className="w-3 h-3" aria-hidden />
+                  <span className="hidden min-[360px]:inline">Export</span>
+                </button>
+              </div>
             </div>
           </div>
         )}

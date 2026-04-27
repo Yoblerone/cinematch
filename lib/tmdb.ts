@@ -350,7 +350,11 @@ export function buildDiscoverSearchParams(params: TmdbDiscoverParams): Record<st
   if (params.originCountry === 'us') {
     q.with_origin_country = 'US';
   } else if (params.originCountry === 'international') {
-    q.without_origin_country = 'US';
+    // TMDB Discover does not support without_origin_country. Instead, use a pipe-OR list of
+    // major non-US film-producing countries covering European, Asian, Latin American, and
+    // other world cinema traditions.
+    q.with_origin_country =
+      'GB|FR|DE|JP|KR|IT|ES|AU|SE|DK|NO|IN|BR|MX|CN|HK|TW|CA|IE|NL|BE|PL|RU|AR|PT|AT|FI|IS|IR|GR|CZ|HU|TR|IL|ZA|NG|TH|PH|RO|SN|MA|EG|CL|CO|VN|ID|UA|RS|HR|SK|SI|BG|LT|LV|EE|GE|AZ|AM|KZ|UZ|BY|MD|AL|MK|BA|ME|XK|LU|MT|CY|AD|LI|MC|SM|VA';
   }
 
   if (q.with_genres && sh?.genrePrimaryHeadComma?.trim()) {
