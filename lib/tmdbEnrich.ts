@@ -640,6 +640,12 @@ type DiscoverFetchParams = {
   withGenresRaw?: string;
   /** Genre IDs appended to `without_genres` (comma-joined AND semantics). */
   withoutGenreIds?: number[];
+  /**
+   * Explicit ISO 639-1 language code to pass as `with_original_language`.
+   * Used internally when fanning out non-English multi-language calls.
+   * When set, overrides any origin-country language logic.
+   */
+  withOriginalLanguage?: string;
 };
 
 const PACING_FAST_KEYWORDS = [
@@ -798,11 +804,45 @@ function calculatePedigreeScore(movie: Movie, filters: FilterState): number {
   return score;
 }
 
+// Top non-English film languages by TMDB catalog depth.
+const NON_ENGLISH_LANGS = ['fr', 'ja', 'ko', 'it', 'es', 'de', 'zh', 'pt', 'ar', 'hi', 'sv', 'nl', 'da', 'pl', 'ru', 'tr'];
+// Major English-speaking non-US film industries.
+const INTL_ENGLISH_COUNTRIES = ['GB', 'AU', 'CA', 'IE', 'NZ'];
+
 async function fetchDiscoverRaw(
   apiKey: string,
   params: DiscoverFetchParams,
   page: number
 ): Promise<TmdbDiscoverResponse> {
+  // Non-English: TMDB only supports a single language code. Fan out to 3 parallel
+  // language-specific calls (rotating by page) and merge so every fetch returns
+  // genuinely mixed international content instead of defaulting to English results.
+  if (params.originCountry === 'international-nonenglish' && !params.withOriginalLanguage) {
+    const startIdx = (page - 1) % NON_ENGLISH_LANGS.length;
+    const langs = [
+      NON_ENGLISH_LANGS[startIdx],
+      NON_ENGLISH_LANGS[(startIdx + 2) % NON_ENGLISH_LANGS.length],
+      NON_ENGLISH_LANGS[(startIdx + 4) % NON_ENGLISH_LANGS.length],
+    ];
+    const base: DiscoverFetchParams = {
+      ...params,
+      originCountry: null, // cleared — language handled by withOriginalLanguage
+      sortBy: params.sortBy === 'vote_count.desc' ? 'vote_average.desc' : params.sortBy,
+      voteCountGte: Math.min(params.voteCountGte ?? 500, 100),
+      voteAverageGte: Math.max(params.voteAverageGte ?? 0, 6.5),
+    };
+    const rows = await Promise.all(
+      langs.map(lang => fetchDiscoverRaw(apiKey, { ...base, withOriginalLanguage: lang }, 1))
+    );
+    const merged = dedupeDiscoverRows(rows.flatMap(r => r.results ?? []));
+    return {
+      results: merged,
+      page,
+      total_pages: Math.max(...rows.map(r => r.total_pages), 1),
+      total_results: merged.length,
+    } as TmdbDiscoverResponse;
+  }
+
   const q = buildDiscoverSearchParams({
     genre: params.genre?.length ? params.genre : undefined,
     genreJoinMode: params.genreJoinMode,
@@ -820,6 +860,8 @@ async function fetchDiscoverRaw(
     smartHarvest: params.smartHarvest,
     originCountry: params.originCountry ?? undefined,
   });
+  // Explicit language override (used by non-English fan-out recursive calls).
+  if (params.withOriginalLanguage) q.with_original_language = params.withOriginalLanguage;
   if (params.withGenresRaw) q.with_genres = params.withGenresRaw;
   if (params.withoutGenreIds?.length) {
     const existing = q.without_genres ? `${q.without_genres},` : '';

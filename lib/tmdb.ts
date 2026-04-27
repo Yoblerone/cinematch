@@ -350,20 +350,13 @@ export function buildDiscoverSearchParams(params: TmdbDiscoverParams): Record<st
   if (params.originCountry === 'us') {
     q.with_origin_country = 'US';
   } else if (params.originCountry === 'international-english') {
-    // TMDB only accepts a single country code for with_origin_country.
-    // Cycle across the major English-speaking non-US film industries based on page number
-    // so that a 6-page baseline fetch covers UK, AU, CA, IE, NZ naturally.
+    // TMDB only supports a single country code. Cycle GB→AU→CA→IE→NZ by page so
+    // a 5-page baseline covers the full range of English-speaking non-US markets.
     const ENGLISH_COUNTRIES = ['GB', 'AU', 'CA', 'IE', 'NZ'];
     const pageIndex = params.page != null ? (params.page - 1) : 0;
     q.with_origin_country = ENGLISH_COUNTRIES[pageIndex % ENGLISH_COUNTRIES.length];
-  } else if (params.originCountry === 'international-nonenglish') {
-    // TMDB with_original_language only accepts a single ISO 639-1 code (pipe-OR is unsupported).
-    // Cycle across top non-English cinema languages by page so a 6-page fetch covers
-    // French, Japanese, Korean, Italian, Spanish, German, Mandarin, Portuguese, Arabic, Hindi.
-    const NONENGLISH_LANGS = ['fr', 'ja', 'ko', 'it', 'es', 'de', 'zh', 'pt', 'ar', 'hi', 'sv', 'nl'];
-    const pageIndex = params.page != null ? (params.page - 1) : 0;
-    q.with_original_language = NONENGLISH_LANGS[pageIndex % NONENGLISH_LANGS.length];
   }
+  // international-nonenglish: handled in fetchDiscoverRaw via fan-out to withOriginalLanguage calls.
 
   if (q.with_genres && sh?.genrePrimaryHeadComma?.trim()) {
     const head = sh.genrePrimaryHeadComma
