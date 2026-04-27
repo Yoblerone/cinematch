@@ -66,8 +66,10 @@ export async function POST(request: NextRequest) {
     const rawOriginCountry = (body as Record<string, unknown>).originCountry;
     if (rawOriginCountry === 'us') {
       filters = { ...filters, originCountry: 'us' };
-    } else if (rawOriginCountry === 'international') {
-      filters = { ...filters, originCountry: 'international' };
+    } else if (rawOriginCountry === 'international-english') {
+      filters = { ...filters, originCountry: 'international-english' };
+    } else if (rawOriginCountry === 'international-nonenglish') {
+      filters = { ...filters, originCountry: 'international-nonenglish' };
     } else {
       filters = { ...filters, originCountry: null };
     }

@@ -206,8 +206,13 @@ export interface FilterState {
   runtime: Runtime;
   /** Null = Off (ignored). */
   directorProminence: 'low' | 'high' | null;
-  /** Null = any country. 'us' = US origin only; 'international' = non-US origin. */
-  originCountry: 'us' | 'international' | null;
+  /**
+   * Null = any country.
+   * 'us' = US origin only (Hollywood).
+   * 'international-english' = English-language films from UK, AU, CA, IE, NZ.
+   * 'international-nonenglish' = Non-English-speaking countries (FR, JP, KR, IT, DE, ES, IN, BR, …).
+   */
+  originCountry: 'us' | 'international-english' | 'international-nonenglish' | null;
 }
 
 export const defaultFilters: FilterState = {

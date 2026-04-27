@@ -299,17 +299,21 @@ export default function DirectorsConsole({
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-brass-light mb-2">Origin</label>
-                    <div className="flex gap-2">
-                      {(['us', 'international'] as const).map((v) => (
+                    <div className="flex flex-wrap gap-2">
+                      {([
+                        { value: 'us', label: 'Hollywood' },
+                        { value: 'international-english', label: 'Intl (English)' },
+                        { value: 'international-nonenglish', label: 'Intl (Non-English)' },
+                      ] as const).map(({ value, label }) => (
                         <button
-                          key={v}
+                          key={value}
                           type="button"
-                          onClick={() => onUpdate({ originCountry: filters.originCountry === v ? null : v })}
+                          onClick={() => onUpdate({ originCountry: filters.originCountry === value ? null : value })}
                           className={`px-3 py-1.5 rounded-sm border-2 text-sm transition-all duration-300 ${
-                            filters.originCountry === v ? 'border-brass bg-brass/15 text-neon-gold shadow-[0_0_20px_rgba(184,134,11,0.4)]' : 'border-brass/50 text-cream hover:border-brass hover:text-brass-light'
+                            filters.originCountry === value ? 'border-brass bg-brass/15 text-neon-gold shadow-[0_0_20px_rgba(184,134,11,0.4)]' : 'border-brass/50 text-cream hover:border-brass hover:text-brass-light'
                           }`}
                         >
-                          {v === 'us' ? 'Hollywood' : 'Everywhere Else'}
+                          {label}
                         </button>
                       ))}
                     </div>

@@ -1509,6 +1509,12 @@ export async function getTmdbMatches(
     discoverBase.voteCountGte = 5000;
   }
 
+  // Non-English films naturally attract fewer votes on TMDB (English-language bias).
+  // Drop the threshold to 100 so acclaimed international films aren't filtered out.
+  if (filters.originCountry === 'international-nonenglish') {
+    discoverBase.voteCountGte = Math.min(discoverBase.voteCountGte ?? 500, 100);
+  }
+
   // Low director prominence: pull from the long tail (smaller films, quality-sorted).
   // A vote_count ceiling of 8000 excludes most blockbusters while keeping well-loved
   // indie/arthouse films. Combined with the ±200 pedigree penalty in calculatePedigreeScore,

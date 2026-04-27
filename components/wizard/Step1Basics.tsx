@@ -52,11 +52,11 @@ interface Step1BasicsProps {
   genre: Genre[];
   decade: (Decade & {})[];
   runtime: Runtime;
-  originCountry: 'us' | 'international' | null;
+  originCountry: 'us' | 'international-english' | 'international-nonenglish' | null;
   onGenreChange: (g: Genre[]) => void;
   onDecadeChange: (d: (Decade & {})[]) => void;
   onRuntimeChange: (r: Runtime) => void;
-  onOriginCountryChange: (c: 'us' | 'international' | null) => void;
+  onOriginCountryChange: (c: 'us' | 'international-english' | 'international-nonenglish' | null) => void;
   onResetStep?: () => void;
 }
 
@@ -167,10 +167,16 @@ export default function Step1Basics({
               Hollywood
             </Chip>
             <Chip
-              selected={originCountry === 'international'}
-              onClick={() => onOriginCountryChange(originCountry === 'international' ? null : 'international')}
+              selected={originCountry === 'international-english'}
+              onClick={() => onOriginCountryChange(originCountry === 'international-english' ? null : 'international-english')}
             >
-              Everywhere Else
+              International (English)
+            </Chip>
+            <Chip
+              selected={originCountry === 'international-nonenglish'}
+              onClick={() => onOriginCountryChange(originCountry === 'international-nonenglish' ? null : 'international-nonenglish')}
+            >
+              International (Non-English)
             </Chip>
           </div>
         </div>

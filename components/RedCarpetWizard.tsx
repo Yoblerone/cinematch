@@ -78,7 +78,9 @@ function mergeSanitizedFilters(raw: Partial<FilterState>): FilterState {
 
   const rawOriginCountry = raw.originCountry;
   const originCountry =
-    rawOriginCountry === 'us' || rawOriginCountry === 'international' ? rawOriginCountry : null;
+    rawOriginCountry === 'us' || rawOriginCountry === 'international-english' || rawOriginCountry === 'international-nonenglish'
+      ? rawOriginCountry
+      : null;
 
   return {
     ...defaultFilters,

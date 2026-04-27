@@ -349,12 +349,14 @@ export function buildDiscoverSearchParams(params: TmdbDiscoverParams): Record<st
 
   if (params.originCountry === 'us') {
     q.with_origin_country = 'US';
-  } else if (params.originCountry === 'international') {
-    // TMDB Discover does not support without_origin_country. Instead, use a pipe-OR list of
-    // major non-US film-producing countries covering European, Asian, Latin American, and
-    // other world cinema traditions.
+  } else if (params.originCountry === 'international-english') {
+    // English-language film industries outside the US: UK, Australia, Canada, Ireland, New Zealand.
+    q.with_origin_country = 'GB|AU|CA|IE|NZ';
+  } else if (params.originCountry === 'international-nonenglish') {
+    // Major non-English film-producing countries. TMDB has no without_origin_country param, so
+    // we use a pipe-OR allowlist of countries whose primary film output is non-English.
     q.with_origin_country =
-      'GB|FR|DE|JP|KR|IT|ES|AU|SE|DK|NO|IN|BR|MX|CN|HK|TW|CA|IE|NL|BE|PL|RU|AR|PT|AT|FI|IS|IR|GR|CZ|HU|TR|IL|ZA|NG|TH|PH|RO|SN|MA|EG|CL|CO|VN|ID|UA|RS|HR|SK|SI|BG|LT|LV|EE|GE|AZ|AM|KZ|UZ|BY|MD|AL|MK|BA|ME|XK|LU|MT|CY|AD|LI|MC|SM|VA';
+      'FR|DE|JP|KR|IT|ES|IN|BR|MX|CN|HK|TW|SE|DK|NO|NL|BE|PL|RU|AR|PT|AT|FI|IS|IR|GR|CZ|HU|TR|IL|ZA|NG|TH|PH|RO|SN|MA|EG|CL|CO|VN|ID|UA|RS|HR|SK|SI|BG|LT|LV|EE|GE|AZ|AM|KZ|UZ|BY|MD|AL|MK|BA|ME|XK|LU|MT|CY|AD|LI|MC|SM';
   }
 
   if (q.with_genres && sh?.genrePrimaryHeadComma?.trim()) {
