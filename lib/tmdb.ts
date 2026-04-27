@@ -350,14 +350,19 @@ export function buildDiscoverSearchParams(params: TmdbDiscoverParams): Record<st
   if (params.originCountry === 'us') {
     q.with_origin_country = 'US';
   } else if (params.originCountry === 'international-english') {
-    // TMDB with_origin_country only accepts a SINGLE country code (no pipe-OR).
-    // GB is the largest English-language non-US film market with the deepest TMDB catalog.
-    q.with_origin_country = 'GB';
+    // TMDB only accepts a single country code for with_origin_country.
+    // Cycle across the major English-speaking non-US film industries based on page number
+    // so that a 6-page baseline fetch covers UK, AU, CA, IE, NZ naturally.
+    const ENGLISH_COUNTRIES = ['GB', 'AU', 'CA', 'IE', 'NZ'];
+    const pageIndex = params.page != null ? (params.page - 1) : 0;
+    q.with_origin_country = ENGLISH_COUNTRIES[pageIndex % ENGLISH_COUNTRIES.length];
   } else if (params.originCountry === 'international-nonenglish') {
-    // with_origin_country only accepts one code, so use with_original_language instead.
-    // TMDB supports pipe-OR for with_original_language, covering all major non-English cinemas.
-    q.with_original_language =
-      'fr|de|ja|ko|it|es|zh|hi|pt|ar|sv|da|nl|ru|pl|tr|he|fa|el|cs|hu|fi|no|ro|vi|id|th|uk';
+    // TMDB with_original_language only accepts a single ISO 639-1 code (pipe-OR is unsupported).
+    // Cycle across top non-English cinema languages by page so a 6-page fetch covers
+    // French, Japanese, Korean, Italian, Spanish, German, Mandarin, Portuguese, Arabic, Hindi.
+    const NONENGLISH_LANGS = ['fr', 'ja', 'ko', 'it', 'es', 'de', 'zh', 'pt', 'ar', 'hi', 'sv', 'nl'];
+    const pageIndex = params.page != null ? (params.page - 1) : 0;
+    q.with_original_language = NONENGLISH_LANGS[pageIndex % NONENGLISH_LANGS.length];
   }
 
   if (q.with_genres && sh?.genrePrimaryHeadComma?.trim()) {

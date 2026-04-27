@@ -1509,10 +1509,14 @@ export async function getTmdbMatches(
     discoverBase.voteCountGte = 5000;
   }
 
-  // Non-English films naturally attract fewer votes on TMDB (English-language bias).
-  // Drop the threshold to 100 so acclaimed international films aren't filtered out.
+  // Non-English films attract fewer votes on TMDB due to English-language user bias.
+  // Drop vote floor to 100 and require ≥6.5 rating so we surface acclaimed international
+  // films (Parasite, Amélie, Seven Samurai) without pulling in unreviewed obscurities.
   if (filters.originCountry === 'international-nonenglish') {
     discoverBase.voteCountGte = Math.min(discoverBase.voteCountGte ?? 500, 100);
+    if (discoverBase.voteAverageGte == null || discoverBase.voteAverageGte < 6.5) {
+      discoverBase.voteAverageGte = 6.5;
+    }
   }
 
   // Low director prominence: pull from the long tail (smaller films, quality-sorted).
