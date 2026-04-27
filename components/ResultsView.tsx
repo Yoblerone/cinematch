@@ -227,26 +227,9 @@ export default function ResultsView({
         </header>
         {showRankedIntro && (
           <div className="px-4 py-2 sm:px-6">
-            <div className="mx-auto flex w-full max-w-4xl items-center justify-between">
-              <div className="w-20 shrink-0" />
-              <p className="text-center text-sm text-antique">
-                Ranked from best match onward. Your top picks are listed first.
-              </p>
-              <div className="flex w-20 shrink-0 justify-end">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const csv = buildCsvExport(filters, results);
-                    downloadCsv(csv, buildCsvFilename());
-                  }}
-                  className="flex items-center gap-1 rounded-sm border border-brass/40 px-2 py-1 text-xs text-brass-light transition-all hover:border-brass hover:bg-brass/10 touch-manipulation"
-                  title="Export results to CSV"
-                >
-                  <Download className="w-3 h-3" aria-hidden />
-                  <span className="hidden min-[360px]:inline">Export</span>
-                </button>
-              </div>
-            </div>
+            <p className="text-center text-sm text-antique">
+              Ranked from best match onward. Your top picks are listed first.
+            </p>
           </div>
         )}
       </div>
@@ -293,6 +276,22 @@ export default function ResultsView({
               {/* flex-1 sandwich: vertical center; card uses external my-12 only (not internal py-8 on scroll) */}
               <div className="flex min-h-0 flex-1 flex-col items-center justify-center">
                 <div className="mx-auto my-3 sm:my-12 flex w-full max-w-4xl min-h-0 max-h-[calc(100%-1.5rem)] sm:max-h-[calc(100%-6rem)] flex-initial flex-col overflow-hidden rounded-xl border-2 border-brass/50 bg-cherry-900/80 shadow-lg">
+                  {showRankedIntro && (
+                    <div className="flex shrink-0 justify-end border-b border-brass/20 px-3 py-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const csv = buildCsvExport(filters, results);
+                          downloadCsv(csv, buildCsvFilename());
+                        }}
+                        className="flex items-center gap-1 rounded-sm border border-brass/40 px-2 py-1 text-xs text-brass-light transition-all hover:border-brass hover:bg-brass/10 touch-manipulation"
+                        title="Export results to CSV"
+                      >
+                        <Download className="w-3 h-3" aria-hidden />
+                        <span className="hidden min-[360px]:inline">Export</span>
+                      </button>
+                    </div>
+                  )}
                   <div
                     ref={internalGridRef}
                     className={`min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:py-8 custom-scrollbar overscroll-y-contain ${isSlateOpen ? 'blur-sm pointer-events-none select-none' : ''}`}
