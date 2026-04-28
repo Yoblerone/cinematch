@@ -2,9 +2,10 @@
 
 import { motion } from 'framer-motion';
 import { Film, Calendar, Clock, Globe } from 'lucide-react';
-import type { Genre, Decade, Runtime } from '@/lib/types';
+import type { Genre, Decade, Runtime, OriginalLanguageChoice } from '@/lib/types';
 import { GENRE_OPTIONS } from '@/lib/optionSets';
 import { MAX_GENRES } from '@/lib/types';
+import { CURATED_ORIGINAL_LANGUAGE_OPTIONS } from '@/lib/originalLanguage';
 import StepResetButton from './StepResetButton';
 
 const DECADE_OPTIONS: { value: Decade & {}; label: string }[] = [
@@ -17,8 +18,7 @@ const DECADE_OPTIONS: { value: Decade & {}; label: string }[] = [
   { value: '2020s', label: '2020s' },
 ];
 
-const RUNTIME_OPTIONS: { value: Runtime; label: string }[] = [
-  { value: null, label: 'Any' },
+const RUNTIME_OPTIONS: { value: Exclude<Runtime, null>; label: string }[] = [
   { value: 'short', label: 'Short (<90 min)' },
   { value: 'medium', label: 'Medium (90–150 min)' },
   { value: 'long', label: 'Long (2.5 hr+)' },
@@ -52,11 +52,11 @@ interface Step1BasicsProps {
   genre: Genre[];
   decade: (Decade & {})[];
   runtime: Runtime;
-  originCountry: 'us' | 'international-english' | 'international-nonenglish' | null;
+  originalLanguage: OriginalLanguageChoice;
   onGenreChange: (g: Genre[]) => void;
   onDecadeChange: (d: (Decade & {})[]) => void;
   onRuntimeChange: (r: Runtime) => void;
-  onOriginCountryChange: (c: 'us' | 'international-english' | 'international-nonenglish' | null) => void;
+  onOriginalLanguageChange: (c: OriginalLanguageChoice) => void;
   onResetStep?: () => void;
 }
 
@@ -64,11 +64,11 @@ export default function Step1Basics({
   genre,
   decade,
   runtime,
-  originCountry,
+  originalLanguage,
   onGenreChange,
   onDecadeChange,
   onRuntimeChange,
-  onOriginCountryChange,
+  onOriginalLanguageChange,
   onResetStep,
 }: Step1BasicsProps) {
   return (
@@ -146,7 +146,7 @@ export default function Step1Basics({
               <Chip
                 key={label}
                 selected={runtime === value}
-                onClick={() => onRuntimeChange(value)}
+                onClick={() => onRuntimeChange(runtime === value ? null : value)}
               >
                 {label}
               </Chip>
@@ -157,20 +157,29 @@ export default function Step1Basics({
         <div>
           <div className="flex items-center gap-2 text-brass-light mb-3">
             <Globe className="w-5 h-5" />
-            <span className="font-medium">Origin</span>
+            <span className="font-medium">Language</span>
           </div>
           <div className="flex flex-wrap gap-2">
+            {CURATED_ORIGINAL_LANGUAGE_OPTIONS.map(({ code, label }) => (
+              <Chip
+                key={code}
+                selected={originalLanguage === code}
+                onClick={() =>
+                  onOriginalLanguageChange(originalLanguage === code ? null : code)
+                }
+              >
+                {label}
+              </Chip>
+            ))}
             <Chip
-              selected={originCountry === 'international-english'}
-              onClick={() => onOriginCountryChange(originCountry === 'international-english' ? null : 'international-english')}
+              selected={originalLanguage === 'world-cinema'}
+              onClick={() =>
+                onOriginalLanguageChange(
+                  originalLanguage === 'world-cinema' ? null : 'world-cinema'
+                )
+              }
             >
-              International (English)
-            </Chip>
-            <Chip
-              selected={originCountry === 'international-nonenglish'}
-              onClick={() => onOriginCountryChange(originCountry === 'international-nonenglish' ? null : 'international-nonenglish')}
-            >
-              International (Non-English)
+              World Cinema
             </Chip>
           </div>
         </div>

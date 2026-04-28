@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Home, ChevronLeft, ChevronRight, Dices, Download } from 'lucide-react';
 import type { FilterState, Movie } from '@/lib/types';
 import { defaultFilters } from '@/lib/types';
+import { formatOriginalLanguageCsvLabel } from '@/lib/originalLanguage';
 import MovieCard from './MovieCard';
 import DirectorsConsole from './DirectorsConsole';
 import SparkleBackground from './SparkleBackground';
@@ -80,11 +81,8 @@ function buildCsvExport(filters: FilterState, results: Movie[]): string {
   if (filters.genre.length > 0) paramLines.push(`Genre: ${filters.genre.join(' + ')}`);
   if (filters.decade.length > 0) paramLines.push(`Decade: ${filters.decade.join(', ')}`);
   if (filters.runtime) paramLines.push(`Runtime: ${filters.runtime}`);
-  if (filters.originCountry === 'international-english') {
-    paramLines.push('Origin: International (English)');
-  } else if (filters.originCountry === 'international-nonenglish') {
-    paramLines.push('Origin: International (Non-English)');
-  }
+  const langCsv = formatOriginalLanguageCsvLabel(filters.originalLanguage);
+  if (langCsv) paramLines.push(`Language: ${langCsv}`);
   if (filters.oscarFilter) paramLines.push(`Best Picture: ${filters.oscarFilter}`);
   if (filters.aListCast) paramLines.push(`A-List Cast: ${filters.aListCast}`);
   if (filters.directorProminence) paramLines.push(`Director Prominence: ${filters.directorProminence}`);
@@ -179,7 +177,11 @@ export default function ResultsView({
         : `${start + 1}–${Math.min(start + RESULTS_PAGE_SIZE, results.length)} of ${results.length}`;
 
   const hasOsarFilter = filters.oscarFilter != null;
-  const hasSecondaryFilter = filters.genre.length > 0 || filters.decade.length > 0 || filters.runtime != null;
+  const hasSecondaryFilter =
+    filters.genre.length > 0 ||
+    filters.decade.length > 0 ||
+    filters.runtime != null ||
+    filters.originalLanguage != null;
   const shouldShowMatchPercent = !hasOsarFilter || hasSecondaryFilter;
 
   const showPaginationFooter = !loading && results.length > 0;

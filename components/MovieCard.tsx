@@ -54,9 +54,7 @@ function StreamingProvidersDetail({
   isFeatured: boolean;
 }) {
   const flat = providerNamesUnique(payload.flatrate);
-  const rent = providerNamesUnique(payload.rent);
-  const buy = providerNamesUnique(payload.buy);
-  const noneListed = flat.length === 0 && rent.length === 0 && buy.length === 0;
+  const noneListed = flat.length === 0;
 
   return (
     <>
@@ -65,18 +63,6 @@ function StreamingProvidersDetail({
         <p>
           <span className="text-brass-light font-medium">Subscribe </span>
           <span>{flat.join(' · ')}</span>
-        </p>
-      ) : null}
-      {rent.length > 0 ? (
-        <p className={flat.length > 0 ? 'mt-1' : ''}>
-          <span className="text-brass-light font-medium">Rent </span>
-          <span>{rent.join(' · ')}</span>
-        </p>
-      ) : null}
-      {buy.length > 0 ? (
-        <p className={flat.length > 0 || rent.length > 0 ? 'mt-1' : ''}>
-          <span className="text-brass-light font-medium">Buy </span>
-          <span>{buy.join(' · ')}</span>
         </p>
       ) : null}
       {noneListed ? (

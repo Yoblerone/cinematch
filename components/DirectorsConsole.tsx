@@ -7,6 +7,7 @@ import type { FilterState, Genre, CriticsVsFans, Decade, Runtime } from '@/lib/t
 import { MAX_GENRES } from '@/lib/types';
 import { GENRE_OPTIONS } from '@/lib/optionSets';
 import { FILTER_WEIGHT_LOW } from '@/lib/filterWeightSegments';
+import { CURATED_ORIGINAL_LANGUAGE_OPTIONS } from '@/lib/originalLanguage';
 import EnergySliderRow from '@/components/wizard/EnergySliderRow';
 
 const SLIDER_CONFIG = [
@@ -282,39 +283,60 @@ export default function DirectorsConsole({
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-brass-light mb-2">Runtime</label>
-                    <div className="flex gap-2">
-                      {([null, 'short', 'medium', 'long'] as const).map((v) => (
+                    <div className="flex gap-2 flex-wrap">
+                      {(['short', 'medium', 'long'] as const).map((v) => (
                         <button
-                          key={String(v)}
+                          key={v}
                           type="button"
-                          onClick={() => onUpdate({ runtime: v })}
+                          onClick={() =>
+                            onUpdate({ runtime: filters.runtime === v ? null : v })
+                          }
                           className={`px-3 py-1.5 rounded-sm border-2 text-sm transition-all duration-300 ${
                             filters.runtime === v ? 'border-brass bg-brass/15 text-neon-gold shadow-[0_0_20px_rgba(184,134,11,0.4)]' : 'border-brass/50 text-cream hover:border-brass hover:text-brass-light'
                           }`}
                         >
-                          {v == null ? 'Any' : v === 'short' ? 'Short (<90 min)' : v === 'medium' ? 'Medium (90–150 min)' : 'Long (2.5 hr+)'}
+                          {v === 'short' ? 'Short (<90 min)' : v === 'medium' ? 'Medium (90–150 min)' : 'Long (2.5 hr+)'}
                         </button>
                       ))}
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-brass-light mb-2">Origin</label>
+                    <label className="block text-sm font-medium text-brass-light mb-2">Language</label>
                     <div className="flex flex-wrap gap-2">
-                      {([
-                        { value: 'international-english', label: 'Intl (English)' },
-                        { value: 'international-nonenglish', label: 'Intl (Non-English)' },
-                      ] as const).map(({ value, label }) => (
+                      {CURATED_ORIGINAL_LANGUAGE_OPTIONS.map(({ code, label }) => (
                         <button
-                          key={value}
+                          key={code}
                           type="button"
-                          onClick={() => onUpdate({ originCountry: filters.originCountry === value ? null : value })}
+                          onClick={() =>
+                            onUpdate({
+                              originalLanguage: filters.originalLanguage === code ? null : code,
+                            })
+                          }
                           className={`px-3 py-1.5 rounded-sm border-2 text-sm transition-all duration-300 ${
-                            filters.originCountry === value ? 'border-brass bg-brass/15 text-neon-gold shadow-[0_0_20px_rgba(184,134,11,0.4)]' : 'border-brass/50 text-cream hover:border-brass hover:text-brass-light'
+                            filters.originalLanguage === code
+                              ? 'border-brass bg-brass/15 text-neon-gold shadow-[0_0_20px_rgba(184,134,11,0.4)]'
+                              : 'border-brass/50 text-cream hover:border-brass hover:text-brass-light'
                           }`}
                         >
                           {label}
                         </button>
                       ))}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onUpdate({
+                            originalLanguage:
+                              filters.originalLanguage === 'world-cinema' ? null : 'world-cinema',
+                          })
+                        }
+                        className={`px-3 py-1.5 rounded-sm border-2 text-sm transition-all duration-300 ${
+                          filters.originalLanguage === 'world-cinema'
+                            ? 'border-brass bg-brass/15 text-neon-gold shadow-[0_0_20px_rgba(184,134,11,0.4)]'
+                            : 'border-brass/50 text-cream hover:border-brass hover:text-brass-light'
+                        }`}
+                      >
+                        World Cinema
+                      </button>
                     </div>
                   </div>
                     </div>

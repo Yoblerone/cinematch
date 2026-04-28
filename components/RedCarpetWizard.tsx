@@ -8,6 +8,7 @@ import { defaultFilters } from '@/lib/types';
 import { FILTER_WEIGHT_LOW, FILTER_WEIGHT_HIGH } from '@/lib/filterWeightSegments';
 import { GENRE_OPTIONS } from '@/lib/optionSets';
 import type { Genre } from '@/lib/types';
+import { coerceOriginalLanguageFromSession } from '@/lib/originalLanguage';
 import Step1Basics from './wizard/Step1Basics';
 import Step2Energy from './wizard/Step2Energy';
 import Step4Pedigree from './wizard/Step4Pedigree';
@@ -76,12 +77,7 @@ function mergeSanitizedFilters(raw: Partial<FilterState>): FilterState {
   const crowd =
     raw.crowd === 'Solo' || raw.crowd === 'Date Night' || raw.crowd === 'Group' ? raw.crowd : null;
 
-  const rawOriginCountry = raw.originCountry;
-  /** Hollywood / US-only filter removed from UI — treat legacy `us` as default (no origin filter). */
-  const originCountry =
-    rawOriginCountry === 'international-english' || rawOriginCountry === 'international-nonenglish'
-      ? rawOriginCountry
-      : null;
+  const originalLanguage = coerceOriginalLanguageFromSession(raw);
 
   return {
     ...defaultFilters,
@@ -105,7 +101,7 @@ function mergeSanitizedFilters(raw: Partial<FilterState>): FilterState {
     decade,
     runtime,
     directorProminence: pedigreeBandOrNull(raw.directorProminence),
-    originCountry,
+    originalLanguage,
   };
 }
 
@@ -491,13 +487,18 @@ export default function RedCarpetWizard() {
                   genre={filters.genre}
                   decade={filters.decade.filter((d): d is NonNullable<typeof d> => d != null)}
                   runtime={filters.runtime}
-                  originCountry={filters.originCountry}
+                  originalLanguage={filters.originalLanguage}
                   onGenreChange={(g) => updateFilters({ genre: g })}
                   onDecadeChange={(d) => updateFilters({ decade: d })}
                   onRuntimeChange={(r) => updateFilters({ runtime: r })}
-                  onOriginCountryChange={(c) => updateFilters({ originCountry: c })}
+                  onOriginalLanguageChange={(c) => updateFilters({ originalLanguage: c })}
                   onResetStep={() =>
-                    updateFilters({ genre: [], decade: [], runtime: null, originCountry: null })
+                    updateFilters({
+                      genre: [],
+                      decade: [],
+                      runtime: null,
+                      originalLanguage: null,
+                    })
                   }
                 />
               </motion.div>

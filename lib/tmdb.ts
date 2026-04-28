@@ -183,8 +183,8 @@ export interface TmdbDiscoverParams {
   voteAverageLte?: number;
   /** Energy sliders → genre OR / `without_genres` only (see `lib/smartHarvest.ts`). */
   smartHarvest?: SmartHarvestQuerySlice;
-  /** Filter by country of origin. */
-  originCountry?: 'us' | 'international-english' | 'international-nonenglish' | null;
+  /** TMDB discover `with_original_language` (ISO 639-1). */
+  withOriginalLanguage?: string;
 }
 
 export interface TmdbMovieResult {
@@ -195,6 +195,10 @@ export interface TmdbMovieResult {
   poster_path: string | null;
   overview: string | null;
   genre_ids: number[];
+  /** TMDB ISO 639-1 original language when present on Discover rows. */
+  original_language?: string | null;
+  vote_count?: number;
+  popularity?: number;
 }
 
 export interface TmdbDiscoverResponse {
@@ -346,17 +350,7 @@ export function buildDiscoverSearchParams(params: TmdbDiscoverParams): Record<st
   if (params.voteAverageGte != null) q['vote_average.gte'] = String(params.voteAverageGte);
   if (params.voteAverageLte != null) q['vote_average.lte'] = String(params.voteAverageLte);
   if (sh?.withoutGenres) q.without_genres = sh.withoutGenres;
-
-  if (params.originCountry === 'us') {
-    q.with_origin_country = 'US';
-  } else if (params.originCountry === 'international-english') {
-    // TMDB only supports a single country code. Cycle GB→AU→CA→IE→NZ by page so
-    // a 5-page baseline covers the full range of English-speaking non-US markets.
-    const ENGLISH_COUNTRIES = ['GB', 'AU', 'CA', 'IE', 'NZ'];
-    const pageIndex = params.page != null ? (params.page - 1) : 0;
-    q.with_origin_country = ENGLISH_COUNTRIES[pageIndex % ENGLISH_COUNTRIES.length];
-  }
-  // international-nonenglish: handled in fetchDiscoverRaw via fan-out to withOriginalLanguage calls.
+  if (params.withOriginalLanguage) q.with_original_language = params.withOriginalLanguage;
 
   if (q.with_genres && sh?.genrePrimaryHeadComma?.trim()) {
     const head = sh.genrePrimaryHeadComma
@@ -412,8 +406,9 @@ export function mapTmdbToMovie(t: TmdbMovieResult): Movie {
     oscarNominee: false,
     runtimeMinutes: 0,
     directorProminence: 0,
-    popularity: 0,
-    voteCount: 0,
+    popularity: typeof t.popularity === 'number' ? t.popularity : 0,
+    voteCount: typeof t.vote_count === 'number' ? t.vote_count : 0,
+    originalLanguage: t.original_language ?? null,
   };
 }
 

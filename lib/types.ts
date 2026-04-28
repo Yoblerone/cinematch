@@ -155,6 +155,9 @@ export interface Movie {
   /** Unique film credits for director (from `/person/{id}/movie_credits`). */
   directorFilmographyCount?: number;
   crewCredits?: { id: number; name: string; job: string; popularity: number }[];
+  /** TMDB `original_language` (ISO 639-1), when known — used for language filters / World Cinema. */
+  originalLanguage?: string | null;
+
   /** Composite ranking signal from prominence utility. */
   customRank?: number;
   /** 0–100 match % from server ranking (taste + prominence); highest = best match. */
@@ -171,6 +174,20 @@ export interface Movie {
 
 /** Max genres user can select (TMDB discover uses AND for multiple). */
 export const MAX_GENRES = 3;
+
+/** Explicit original-language picks (non‑English); English/default = null (no TMDB language filter). */
+export type CuratedOriginalLanguageCode =
+  | 'ja'
+  | 'ko'
+  | 'fr'
+  | 'es'
+  | 'de'
+  | 'it'
+  | 'pt'
+  | 'zh'
+  | 'hi';
+
+export type OriginalLanguageChoice = null | CuratedOriginalLanguageCode | 'world-cinema';
 
 export interface FilterState {
   crowd: CrowdType | null;
@@ -207,12 +224,10 @@ export interface FilterState {
   /** Null = Off (ignored). */
   directorProminence: 'low' | 'high' | null;
   /**
-   * Null = any country.
-   * 'us' = US origin only (Hollywood).
-   * 'international-english' = English-language films from UK, AU, CA, IE, NZ.
-   * 'international-nonenglish' = Non-English-speaking countries (FR, JP, KR, IT, DE, ES, IN, BR, …).
+   * TMDB `with_original_language`. Null = default pool (no language filter — effectively English-majority TMDB bias).
+   * Curated ISO codes + World Cinema fan-out (`world-cinema`).
    */
-  originCountry: 'us' | 'international-english' | 'international-nonenglish' | null;
+  originalLanguage: OriginalLanguageChoice;
 }
 
 export const defaultFilters: FilterState = {
@@ -236,5 +251,5 @@ export const defaultFilters: FilterState = {
   decade: [],
   runtime: null,
   directorProminence: null,
-  originCountry: null,
+  originalLanguage: null,
 };

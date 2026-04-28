@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { FilterState } from '@/lib/types';
 import { defaultFilters } from '@/lib/types';
 import { getTmdbMatches } from '@/lib/tmdbEnrich';
+import { normalizeOriginalLanguageFilterInput } from '@/lib/originalLanguage';
 /** Thematic density V2: `getTmdbMatches` → `filterMovies` + `lib/scoring/energyManifest.ts` + `lib/scoring/thematicDensity.ts` (no `fetchMovies.ts` in this app). */
 
 export async function POST(request: NextRequest) {
@@ -63,14 +64,19 @@ export async function POST(request: NextRequest) {
     } else {
       filters = { ...filters, oscarFilter: null };
     }
-    const rawOriginCountry = (body as Record<string, unknown>).originCountry;
-    if (rawOriginCountry === 'international-english') {
-      filters = { ...filters, originCountry: 'international-english' };
-    } else if (rawOriginCountry === 'international-nonenglish') {
-      filters = { ...filters, originCountry: 'international-nonenglish' };
-    } else {
-      filters = { ...filters, originCountry: null };
-    }
+    const rawLang =
+      (body as Record<string, unknown>).originalLanguage ??
+      (body as Record<string, unknown>).originCountry;
+    const migrated =
+      rawLang === 'international-nonenglish'
+        ? 'world-cinema'
+        : rawLang === 'international-english'
+          ? null
+          : rawLang;
+    filters = {
+      ...filters,
+      originalLanguage: normalizeOriginalLanguageFilterInput(migrated),
+    };
     discoverStartPage = typeof body.discoverStartPage === 'number' && body.discoverStartPage >= 1 && body.discoverStartPage <= 10
       ? Math.floor(body.discoverStartPage)
       : undefined;

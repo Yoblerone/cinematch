@@ -3,8 +3,7 @@
  * Derives pacing, humor, romance, etc. from genre + keywords when TMDB has no direct field.
  */
 
-import type { Movie, Genre, Theme, VisualStyle, Soundtrack, CriticsVsFans, Decade } from './types';
-import type { FilterState } from './types';
+import type { Movie, Genre, Theme, VisualStyle, Soundtrack, CriticsVsFans, Decade, FilterState, OriginalLanguageChoice } from './types';
 import {
   GENRE_ID_TO_NAME,
   GENRE_NAME_TO_ID,
@@ -38,6 +37,11 @@ import { claudeRerank } from './claudeRerank';
 import { combinedTopRatedMatchScore } from './criticsFansRank';
 import { PROMINENCE_TRUTH_LIST } from './prominence';
 import { prestigeCastMatch, prestigeDirectorMatch } from './prestigeScore';
+import { applyTieredVoteFloorsToDiscoverParams, tierForOriginalLanguageIso } from './discoverLanguageFloors';
+import {
+  WORLD_CINEMA_FANOUT_LANGUAGE_CODES,
+  filterMoviesForOriginalLanguageChoice,
+} from './originalLanguage';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const CONCURRENCY = 6;
@@ -306,6 +310,7 @@ export interface TmdbMovieDetails {
   genres?: { id: number; name: string }[];
   imdb_id?: string | null;
   belongs_to_collection?: { id: number; name: string } | null;
+  original_language?: string | null;
   /** Present when fetching with append_to_response=keywords */
   keywords?: { keywords?: { id: number; name: string }[] };
   /** Present when fetching with append_to_response=videos */
@@ -604,6 +609,7 @@ export async function enrichMovie(
     castCredits: castCreditsMapped,
     crewCredits: crewCreditsMapped,
     collectionId: details?.belongs_to_collection?.id ?? null,
+    originalLanguage: details?.original_language ?? (base as { original_language?: string }).original_language ?? null,
   };
 }
 
@@ -639,8 +645,10 @@ type DiscoverFetchParams = {
   /** Raw comma-separated TMDB keyword IDs for Discover `without_keywords` (comma AND semantics). */
   withoutKeywordsCsv?: string;
   genreJoinMode?: 'and' | 'or';
-  /** Filter by country of origin. 'us' = US only; 'international' = non-US. */
-  originCountry?: 'us' | 'international-english' | 'international-nonenglish' | null;
+  /** User-facing language filter; `world-cinema` triggers World Cinema fan-out in `fetchDiscoverRaw`. */
+  originalLanguage?: OriginalLanguageChoice | null;
+  /** World Cinema only: optional floor on inner Discover `primary_release_date.gte` (YYYY-MM-DD). */
+  worldCinemaReleaseFloor?: string;
   /**
    * Raw TMDB `with_genres` string (pipe = OR, comma = AND). Overrides genre + genreJoinMode when set.
    * Used by axis supplement fetches to combine user genres with overlay genres using OR.
@@ -650,10 +658,13 @@ type DiscoverFetchParams = {
   withoutGenreIds?: number[];
   /**
    * Explicit ISO 639-1 language code to pass as `with_original_language`.
-   * Used internally when fanning out non-English multi-language calls.
-   * When set, overrides any origin-country language logic.
+   * Used by World Cinema fan-out recursion and single-language paths.
    */
   withOriginalLanguage?: string;
+  /** Single-language Discover: at most one relaxed vote-count retry when rows &lt; 8. */
+  _discoverPoolRetryDone?: boolean;
+  /** World Cinema merged Discover: at most one relaxed fan-out retry when merged rows &lt; 8. */
+  _wcFanoutRetry?: boolean;
 };
 
 const PACING_FAST_KEYWORDS = [
@@ -812,99 +823,192 @@ function calculatePedigreeScore(movie: Movie, filters: FilterState): number {
   return score;
 }
 
-// Top non-English film languages by TMDB catalog depth.
-const NON_ENGLISH_LANGS = ['fr', 'ja', 'ko', 'it', 'es', 'de', 'zh', 'pt', 'ar', 'hi', 'sv', 'nl', 'da', 'pl', 'ru', 'tr'];
-// Major English-speaking non-US film industries.
-const INTL_ENGLISH_COUNTRIES = ['GB', 'AU', 'CA', 'IE', 'NZ'];
+function tmdbRowsPre2000Ratio(rows: TmdbMovieResult[]): number {
+  if (rows.length === 0) return 0;
+  let pre = 0;
+  for (const r of rows) {
+    const y = r.release_date ? new Date(r.release_date).getFullYear() : 0;
+    if (y > 0 && y < 2000) pre += 1;
+  }
+  return pre / rows.length;
+}
+
+async function fetchWorldCinemaMergedDiscover(
+  apiKey: string,
+  params: DiscoverFetchParams,
+  page: number
+): Promise<TmdbDiscoverResponse> {
+  const innerTemplate: DiscoverFetchParams = {
+    ...params,
+    originalLanguage: null,
+    sortBy:
+      params.sortBy === 'vote_count.desc' || params.sortBy === 'popularity.desc'
+        ? 'vote_average.desc'
+        : params.sortBy ?? 'vote_average.desc',
+  };
+  if (params.worldCinemaReleaseFloor) {
+    innerTemplate.primaryReleaseDateGte = params.worldCinemaReleaseFloor;
+  }
+
+  const tiered: DiscoverFetchParams = { ...innerTemplate };
+  applyTieredVoteFloorsToDiscoverParams(tiered, 'tier_c');
+
+  const runFanout = async (base: DiscoverFetchParams): Promise<TmdbMovieResult[]> => {
+    const pool = WORLD_CINEMA_FANOUT_LANGUAGE_CODES;
+    const startIdx = (page - 1) % pool.length;
+    const langs = [
+      pool[startIdx]!,
+      pool[(startIdx + 13) % pool.length]!,
+      pool[(startIdx + 27) % pool.length]!,
+    ];
+    const rows = await Promise.all(
+      langs.map((lang) =>
+        fetchDiscoverRawSingle(apiKey, { ...base, withOriginalLanguage: lang }, 1)
+      ),
+    );
+    return dedupeDiscoverRows(rows.flatMap((r) => r.results ?? []));
+  };
+
+  let merged = await runFanout(tiered);
+
+  if (merged.length < 8 && !params._wcFanoutRetry) {
+    const relaxed: DiscoverFetchParams = {
+      ...tiered,
+      voteCountGte: Math.max(15, Math.floor((tiered.voteCountGte ?? 25) * 0.7)),
+      _wcFanoutRetry: true,
+    };
+    merged = await runFanout(relaxed);
+  }
+
+  if (merged.length > 0 && tmdbRowsPre2000Ratio(merged) > 0.7) {
+    const supplementBase: DiscoverFetchParams = {
+      ...tiered,
+      primaryReleaseDateGte: '2000-01-01',
+    };
+    const extra = await runFanout(supplementBase);
+    if (extra.length > 0) {
+      const sortedExtra = [...extra].sort(
+        (a, b) =>
+          (b.release_date ? new Date(b.release_date).getFullYear() : 0) -
+          (a.release_date ? new Date(a.release_date).getFullYear() : 0)
+      );
+      const acc: TmdbMovieResult[] = [...merged];
+      const seen = new Set(acc.map((r) => r.id));
+      for (const row of sortedExtra) {
+        if (seen.has(row.id)) continue;
+        if (tmdbRowsPre2000Ratio(acc) <= 0.7) break;
+        acc.push(row);
+        seen.add(row.id);
+      }
+      merged = dedupeDiscoverRows(acc);
+    }
+  }
+
+  return {
+    results: merged,
+    page,
+    total_pages: Math.max(page, 1),
+    total_results: merged.length,
+  } as TmdbDiscoverResponse;
+}
+
+async function fetchDiscoverRawSingle(
+  apiKey: string,
+  params: DiscoverFetchParams,
+  page: number
+): Promise<TmdbDiscoverResponse> {
+  const langActive =
+    !!params.withOriginalLanguage ||
+    (params.originalLanguage != null && params.originalLanguage !== 'world-cinema');
+
+  const fetchInner = async (relaxedVote: boolean): Promise<TmdbDiscoverResponse> => {
+    const working = relaxedVote
+      ? {
+          ...params,
+          voteCountGte: Math.max(15, Math.floor((params.voteCountGte ?? 500) * 0.7)),
+          _discoverPoolRetryDone: true,
+        }
+      : params;
+
+    const lang =
+      working.withOriginalLanguage ??
+      (working.originalLanguage && working.originalLanguage !== 'world-cinema'
+        ? working.originalLanguage
+        : undefined);
+
+    const q = buildDiscoverSearchParams({
+      genre: working.genre?.length ? working.genre : undefined,
+      genreJoinMode: working.genreJoinMode,
+      decade: working.decade?.length ? working.decade.filter((d): d is NonNullable<typeof d> => d != null) : undefined,
+      runtime: working.runtime ?? null,
+      oscarFilter: working.oscarFilter ?? undefined,
+      page,
+      sortBy: working.sortBy,
+      voteCountGte: working.voteCountGte,
+      voteCountLte: working.voteCountLte,
+      popularityLte: working.popularityLte,
+      popularityGte: working.popularityGte,
+      voteAverageGte: working.voteAverageGte,
+      voteAverageLte: working.voteAverageLte,
+      smartHarvest: working.smartHarvest,
+      withOriginalLanguage: lang,
+    });
+    if (working.withGenresRaw) q.with_genres = working.withGenresRaw;
+    if (working.withoutGenreIds?.length) {
+      const existing = q.without_genres ? `${q.without_genres},` : '';
+      q.without_genres = `${existing}${working.withoutGenreIds.join(',')}`;
+    }
+    if (working.primaryReleaseDateGte) q['primary_release_date.gte'] = working.primaryReleaseDateGte;
+    if (working.withKeywordsCsv) {
+      q.with_keywords = joinKeywordCsv(working.withKeywordsCsv, working.withKeywordsJoinMode ?? 'and');
+    }
+    if (working.withoutKeywordsCsv) q.without_keywords = working.withoutKeywordsCsv;
+    const url = `${TMDB_BASE}/discover/movie?${new URLSearchParams({ ...q, api_key: apiKey }).toString()}`;
+    const debugUrl = url.replace(/api_key=[^&]+/, 'api_key=***');
+    if (process.env.NODE_ENV === 'development') {
+      const discoverParams = {
+        page: q.page,
+        sort_by: q.sort_by,
+        with_original_language: q.with_original_language ?? '(none)',
+        with_genres: q.with_genres ?? '(none)',
+        without_genres: q.without_genres ?? '(none)',
+        with_keywords: q.with_keywords ?? '(none)',
+        without_keywords: q.without_keywords ?? '(none)',
+        'vote_count.gte': q['vote_count.gte'],
+        'vote_average.gte': q['vote_average.gte'],
+      };
+      console.log('[TMDB Discover] page', page, 'params:', discoverParams);
+      console.log('Final TMDB Discover URL:', debugUrl);
+    }
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`TMDB Discover ${res.status}`);
+    const data = (await res.json()) as TmdbDiscoverResponse;
+    if (working.oscarFilter === 'winner') {
+      const results = data.results ?? [];
+      const total = data.total_results ?? results.length;
+      console.log('[TMDB Discover] Winner request: total_results=', total, 'page size=', results.length);
+    }
+
+    const results = data.results ?? [];
+    if (langActive && results.length < 8 && !relaxedVote) {
+      return fetchInner(true);
+    }
+    return data;
+  };
+
+  return fetchInner(false);
+}
 
 async function fetchDiscoverRaw(
   apiKey: string,
   params: DiscoverFetchParams,
   page: number
 ): Promise<TmdbDiscoverResponse> {
-  // Non-English: TMDB only supports a single language code. Fan out to 3 parallel
-  // language-specific calls (rotating by page) and merge so every fetch returns
-  // genuinely mixed international content instead of defaulting to English results.
-  if (params.originCountry === 'international-nonenglish' && !params.withOriginalLanguage) {
-    const startIdx = (page - 1) % NON_ENGLISH_LANGS.length;
-    const langs = [
-      NON_ENGLISH_LANGS[startIdx],
-      NON_ENGLISH_LANGS[(startIdx + 2) % NON_ENGLISH_LANGS.length],
-      NON_ENGLISH_LANGS[(startIdx + 4) % NON_ENGLISH_LANGS.length],
-    ];
-    const base: DiscoverFetchParams = {
-      ...params,
-      originCountry: null, // cleared — language handled by withOriginalLanguage
-      sortBy: params.sortBy === 'vote_count.desc' ? 'vote_average.desc' : params.sortBy,
-      voteCountGte: Math.min(params.voteCountGte ?? 500, 100),
-      voteAverageGte: Math.max(params.voteAverageGte ?? 0, 6.5),
-    };
-    const rows = await Promise.all(
-      langs.map(lang => fetchDiscoverRaw(apiKey, { ...base, withOriginalLanguage: lang }, 1))
-    );
-    const merged = dedupeDiscoverRows(rows.flatMap(r => r.results ?? []));
-    return {
-      results: merged,
-      page,
-      total_pages: Math.max(...rows.map(r => r.total_pages), 1),
-      total_results: merged.length,
-    } as TmdbDiscoverResponse;
+  if (params.originalLanguage === 'world-cinema' && !params.withOriginalLanguage) {
+    return fetchWorldCinemaMergedDiscover(apiKey, params, page);
   }
 
-  const q = buildDiscoverSearchParams({
-    genre: params.genre?.length ? params.genre : undefined,
-    genreJoinMode: params.genreJoinMode,
-    decade: params.decade?.length ? params.decade.filter((d): d is NonNullable<typeof d> => d != null) : undefined,
-    runtime: params.runtime ?? null,
-    oscarFilter: params.oscarFilter ?? undefined,
-    page,
-    sortBy: params.sortBy,
-    voteCountGte: params.voteCountGte,
-    voteCountLte: params.voteCountLte,
-    popularityLte: params.popularityLte,
-    popularityGte: params.popularityGte,
-    voteAverageGte: params.voteAverageGte,
-    voteAverageLte: params.voteAverageLte,
-    smartHarvest: params.smartHarvest,
-    originCountry: params.originCountry ?? undefined,
-  });
-  // Explicit language override (used by non-English fan-out recursive calls).
-  if (params.withOriginalLanguage) q.with_original_language = params.withOriginalLanguage;
-  if (params.withGenresRaw) q.with_genres = params.withGenresRaw;
-  if (params.withoutGenreIds?.length) {
-    const existing = q.without_genres ? `${q.without_genres},` : '';
-    q.without_genres = `${existing}${params.withoutGenreIds.join(',')}`;
-  }
-  if (params.primaryReleaseDateGte) q['primary_release_date.gte'] = params.primaryReleaseDateGte;
-  if (params.withKeywordsCsv) {
-    q.with_keywords = joinKeywordCsv(params.withKeywordsCsv, params.withKeywordsJoinMode ?? 'and');
-  }
-  if (params.withoutKeywordsCsv) q.without_keywords = params.withoutKeywordsCsv;
-  const url = `${TMDB_BASE}/discover/movie?${new URLSearchParams({ ...q, api_key: apiKey }).toString()}`;
-  const debugUrl = url.replace(/api_key=[^&]+/, 'api_key=***');
-  if (process.env.NODE_ENV === 'development') {
-    const discoverParams = {
-      page: q.page,
-      sort_by: q.sort_by,
-      with_genres: q.with_genres ?? '(none)',
-      without_genres: q.without_genres ?? '(none)',
-      with_keywords: q.with_keywords ?? '(none)',
-      without_keywords: q.without_keywords ?? '(none)',
-      'vote_count.gte': q['vote_count.gte'],
-      'vote_average.gte': q['vote_average.gte'],
-    };
-    console.log('[TMDB Discover] page', page, 'params:', discoverParams);
-    console.log('Final TMDB Discover URL:', debugUrl);
-  }
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`TMDB Discover ${res.status}`);
-  const data = (await res.json()) as TmdbDiscoverResponse;
-  if (params.oscarFilter === 'winner') {
-    const results = data.results ?? [];
-    const total = data.total_results ?? results.length;
-    console.log('[TMDB Discover] Winner request: total_results=', total, 'page size=', results.length);
-  }
-  return data;
+  return fetchDiscoverRawSingle(apiKey, params, page);
 }
 
 /** If strict AND returns fewer than this many titles, retry with OR (pipe) for a wider pool. */
@@ -1290,7 +1394,19 @@ async function padRankedPoolIfThin(
     smartHarvest: emptySmartHarvestSlice(),
     sortBy: 'vote_average.desc',
     voteCountGte: 500,
+    /** Padding avoids World Cinema fan-out (expensive); curated ISO passes through for parity. */
+    originalLanguage:
+      filters.originalLanguage === 'world-cinema' ? null : filters.originalLanguage ?? null,
   };
+  if (
+    filters.originalLanguage != null &&
+    filters.originalLanguage !== 'world-cinema'
+  ) {
+    applyTieredVoteFloorsToDiscoverParams(
+      padDiscover,
+      tierForOriginalLanguageIso(filters.originalLanguage)
+    );
+  }
   const padRaw = await harvestDiscoverDeepPages(
     apiKey,
     padDiscover,
@@ -1386,7 +1502,7 @@ async function fetchAndEnrichByIds(
       if (yearDiff !== 0) return yearDiff;
       return (b.oscarWinner ? 1 : 0) - (a.oscarWinner ? 1 : 0);
     });
-    return result.slice(0, 36);
+    return filterMoviesForOriginalLanguageChoice(result.slice(0, 36), filters.originalLanguage);
   }
 
   // Secondary filters active (vibe sliders, decade, etc.) — run Claude rerank for best ordering.
@@ -1395,7 +1511,7 @@ async function fetchAndEnrichByIds(
   // doesn't set academyAwardYear/academyAwardType, so the card wouldn't show the Oscar tag).
   const reranked = await claudeRerank(result, filters, apiKey);
   const patchedReranked = await patchBackfillDetails(apiKey, reranked);
-  return patchedReranked
+  const sliced = patchedReranked
     .filter((m) => allowed(parseTmdbMovieId(m.id)))
     .map((m) => {
       if (m.academyAwardYear != null) return m;
@@ -1410,6 +1526,7 @@ async function fetchAndEnrichByIds(
       };
     })
     .slice(0, 36);
+  return filterMoviesForOriginalLanguageChoice(sliced, filters.originalLanguage);
 }
 
 /** Live API: discover/movie with genres + runtime/decade; enrich → keyword-based vibe rank (no Discover keyword filter). */
@@ -1542,7 +1659,7 @@ export async function getTmdbMatches(
     popularityGte: baseParams.popularityGte,
     voteAverageGte: baseParams.voteAverageGte,
     voteAverageLte: baseParams.voteAverageLte,
-    originCountry: filters.originCountry,
+    originalLanguage: filters.originalLanguage,
   };
   if (filters.aListCast === 'low') {
     discoverBase.voteCountGte = 50;
@@ -1551,16 +1668,6 @@ export async function getTmdbMatches(
     discoverBase.voteAverageGte = 6.5;
   } else if (filters.aListCast === 'high') {
     discoverBase.voteCountGte = 5000;
-  }
-
-  // Non-English films attract fewer votes on TMDB due to English-language user bias.
-  // Drop vote floor to 100 and require ≥6.5 rating so we surface acclaimed international
-  // films (Parasite, Amélie, Seven Samurai) without pulling in unreviewed obscurities.
-  if (filters.originCountry === 'international-nonenglish') {
-    discoverBase.voteCountGte = Math.min(discoverBase.voteCountGte ?? 500, 100);
-    if (discoverBase.voteAverageGte == null || discoverBase.voteAverageGte < 6.5) {
-      discoverBase.voteAverageGte = 6.5;
-    }
   }
 
   // Low director prominence: pull from the long tail (smaller films, quality-sorted).
@@ -1601,6 +1708,14 @@ export async function getTmdbMatches(
     delete discoverBase.voteAverageGte;
   } else {
     applyEnergyVoteAverageFloor(discoverBase, filters);
+  }
+
+  /** Tiered Discover floors for explicit original-language picks (curated ISO codes only). */
+  if (filters.originalLanguage != null && filters.originalLanguage !== 'world-cinema') {
+    applyTieredVoteFloorsToDiscoverParams(
+      discoverBase,
+      tierForOriginalLanguageIso(filters.originalLanguage),
+    );
   }
 
   const anchorBase: DiscoverFetchParams = {
@@ -1834,7 +1949,7 @@ export async function getTmdbMatches(
   const rerankResults = hasActiveVibe ? await claudeRerank(poolForRerank, filters, apiKey) : baselineForClaude.slice(0, 36);
   const finalResults = await patchBackfillDetails(apiKey, rerankResults);
   console.log('Total Movies Returned (deep-review vibe pool):', finalResults.length);
-  return finalResults;
+  return filterMoviesForOriginalLanguageChoice(finalResults, filters.originalLanguage);
 }
 
 /**
