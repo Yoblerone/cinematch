@@ -5,8 +5,16 @@
 
 import type { Movie, Genre, Theme, VisualStyle, Soundtrack, CriticsVsFans, Decade } from './types';
 import type { FilterState } from './types';
-import type { TmdbMovieResult, TmdbDiscoverResponse } from './tmdb';
-import { GENRE_ID_TO_NAME, GENRE_NAME_TO_ID, buildDiscoverSearchParams, mapTmdbToMovie, type SmartHarvestQuerySlice } from './tmdb';
+import {
+  GENRE_ID_TO_NAME,
+  GENRE_NAME_TO_ID,
+  buildDiscoverSearchParams,
+  mapTmdbToMovie,
+  parseTmdbMovieId,
+  type SmartHarvestQuerySlice,
+  type TmdbMovieResult,
+  type TmdbDiscoverResponse,
+} from './tmdb';
 import { ENERGY_MANIFEST, type EnergyManifestAxis } from './scoring/energyManifest';
 import { scoreMovieDeclarative } from './scoring/thematicEngine';
 import {
@@ -401,7 +409,7 @@ async function patchBackfillDetails(apiKey: string, movies: Movie[]): Promise<Mo
   const patchMap = new Map<string, Partial<Movie>>();
   await Promise.all(
     needsPatch.map(async (m) => {
-      const tmdbId = tmdbIdFromMovieId(m.id);
+      const tmdbId = parseTmdbMovieId(m.id);
       if (!tmdbId) return;
       const details = await fetchMovieDetails(apiKey, tmdbId);
       if (!details) return;
@@ -1265,12 +1273,6 @@ function stubResult(id: number): TmdbMovieResult {
   };
 }
 
-/** Parse TMDB numeric id from our movie id (e.g. "tmdb-872585" -> 872585). */
-function tmdbIdFromMovieId(movieId: string): number {
-  const n = parseInt(movieId.replace(/^tmdb-/, ''), 10);
-  return Number.isNaN(n) ? 0 : n;
-}
-
 /** When vibe filtering leaves too few rows, add popular Discover titles in the user’s genre(s) for a full grid. */
 async function padRankedPoolIfThin(
   apiKey: string,
@@ -1279,7 +1281,7 @@ async function padRankedPoolIfThin(
   ranked: Movie[]
 ): Promise<Movie[]> {
   if (ranked.length >= MIN_RANKED_BEFORE_PADDING) return ranked;
-  const excluded = new Set(ranked.map((m) => tmdbIdFromMovieId(m.id)));
+  const excluded = new Set(ranked.map((m) => parseTmdbMovieId(m.id)));
   const padDiscover: DiscoverFetchParams = {
     genre: filters.genre.length ? filters.genre : [],
     decade: filters.decade,
@@ -1301,7 +1303,7 @@ async function padRankedPoolIfThin(
   const padEnriched = await enrichDiscoverPool(apiKey, fresh.slice(0, DEEP_POOL_MAX));
   const out = [...ranked];
   for (const m of padEnriched) {
-    const id = tmdbIdFromMovieId(m.id);
+    const id = parseTmdbMovieId(m.id);
     if (excluded.has(id)) continue;
     if (filters.genre.length > 0 && !m.genre.some((g) => filters.genre.includes(g))) continue;
     excluded.add(id);
@@ -1374,7 +1376,7 @@ async function fetchAndEnrichByIds(
     const movies = await Promise.all(batch.map((b) => enrichOne(b)));
     enriched.push(...movies);
   }
-  const filtered = enriched.filter((m) => allowed(tmdbIdFromMovieId(m.id)));
+  const filtered = enriched.filter((m) => allowed(parseTmdbMovieId(m.id)));
   const result = filterMovies(filtered, filters, { skipMaxSliderVibeTrim: true });
 
   // "List of record" mode: if Oscar filter is the only active preference, keep strict year order.
@@ -1394,10 +1396,10 @@ async function fetchAndEnrichByIds(
   const reranked = await claudeRerank(result, filters, apiKey);
   const patchedReranked = await patchBackfillDetails(apiKey, reranked);
   return patchedReranked
-    .filter((m) => allowed(tmdbIdFromMovieId(m.id)))
+    .filter((m) => allowed(parseTmdbMovieId(m.id)))
     .map((m) => {
       if (m.academyAwardYear != null) return m;
-      const info = getOscarAwardInfo(tmdbIdFromMovieId(m.id));
+      const info = getOscarAwardInfo(parseTmdbMovieId(m.id));
       if (!info) return m;
       return {
         ...m,
@@ -1918,7 +1920,7 @@ async function fetchAxisSupplements(
   existingPool: Movie[]
 ): Promise<Movie[]> {
   const existingIds = new Set<number>(
-    existingPool.map((m) => tmdbIdFromMovieId(m.id)).filter((n) => n > 0)
+    existingPool.map((m) => parseTmdbMovieId(m.id)).filter((n) => n > 0)
   );
 
   // Build base genre ID set from user-selected genres.

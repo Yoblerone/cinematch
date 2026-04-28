@@ -416,3 +416,9 @@ export function mapTmdbToMovie(t: TmdbMovieResult): Movie {
     voteCount: 0,
   };
 }
+
+/** Parse TMDB numeric id from app movie ids (`tmdb-872585` → 872585). */
+export function parseTmdbMovieId(movieId: string): number {
+  const n = parseInt(movieId.replace(/^tmdb-/, ''), 10);
+  return Number.isNaN(n) ? 0 : n;
+}

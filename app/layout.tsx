@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { Playfair_Display, DM_Sans } from 'next/font/google';
+import { Analytics } from '@vercel/analytics/next';
 import './globals.css';
 
 const playfair = Playfair_Display({
@@ -28,6 +29,7 @@ export default function RootLayout({
         <div className="flex min-h-0 h-full w-full flex-1 flex-col overflow-hidden border-2 border-double border-brass/80">
           {children}
         </div>
+        <Analytics />
       </body>
     </html>
   );

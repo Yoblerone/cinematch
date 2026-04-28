@@ -64,9 +64,7 @@ export async function POST(request: NextRequest) {
       filters = { ...filters, oscarFilter: null };
     }
     const rawOriginCountry = (body as Record<string, unknown>).originCountry;
-    if (rawOriginCountry === 'us') {
-      filters = { ...filters, originCountry: 'us' };
-    } else if (rawOriginCountry === 'international-english') {
+    if (rawOriginCountry === 'international-english') {
       filters = { ...filters, originCountry: 'international-english' };
     } else if (rawOriginCountry === 'international-nonenglish') {
       filters = { ...filters, originCountry: 'international-nonenglish' };

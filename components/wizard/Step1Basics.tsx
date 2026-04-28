@@ -161,12 +161,6 @@ export default function Step1Basics({
           </div>
           <div className="flex flex-wrap gap-2">
             <Chip
-              selected={originCountry === 'us'}
-              onClick={() => onOriginCountryChange(originCountry === 'us' ? null : 'us')}
-            >
-              Hollywood
-            </Chip>
-            <Chip
               selected={originCountry === 'international-english'}
               onClick={() => onOriginCountryChange(originCountry === 'international-english' ? null : 'international-english')}
             >

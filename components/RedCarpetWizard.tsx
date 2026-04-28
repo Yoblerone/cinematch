@@ -77,8 +77,9 @@ function mergeSanitizedFilters(raw: Partial<FilterState>): FilterState {
     raw.crowd === 'Solo' || raw.crowd === 'Date Night' || raw.crowd === 'Group' ? raw.crowd : null;
 
   const rawOriginCountry = raw.originCountry;
+  /** Hollywood / US-only filter removed from UI — treat legacy `us` as default (no origin filter). */
   const originCountry =
-    rawOriginCountry === 'us' || rawOriginCountry === 'international-english' || rawOriginCountry === 'international-nonenglish'
+    rawOriginCountry === 'international-english' || rawOriginCountry === 'international-nonenglish'
       ? rawOriginCountry
       : null;
 
@@ -421,7 +422,7 @@ export default function RedCarpetWizard() {
                 title="Home (step 1)"
               >
                 <Home className="w-3.5 h-3.5" />
-                <span className="hidden min-[360px]:inline">Home</span>
+                <span className="hidden sm:inline">Home</span>
               </button>
             </div>
             <div className="flex justify-center shrink-0">
@@ -436,7 +437,7 @@ export default function RedCarpetWizard() {
                 title="Surprise Me (Chaos Mode)"
               >
                 <Dices className={`w-3.5 h-3.5 ${rollingDice ? 'animate-pulse' : ''}`} aria-hidden />
-                <span className="hidden min-[360px]:inline">{rollingDice ? 'Rolling…' : 'Surprise Me'}</span>
+                <span className="hidden sm:inline">{rollingDice ? 'Rolling…' : 'Surprise Me'}</span>
               </button>
             </div>
           </div>

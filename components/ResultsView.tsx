@@ -80,7 +80,11 @@ function buildCsvExport(filters: FilterState, results: Movie[]): string {
   if (filters.genre.length > 0) paramLines.push(`Genre: ${filters.genre.join(' + ')}`);
   if (filters.decade.length > 0) paramLines.push(`Decade: ${filters.decade.join(', ')}`);
   if (filters.runtime) paramLines.push(`Runtime: ${filters.runtime}`);
-  if (filters.originCountry) paramLines.push(`Origin: ${filters.originCountry === 'us' ? 'Hollywood' : 'Everywhere Else'}`);
+  if (filters.originCountry === 'international-english') {
+    paramLines.push('Origin: International (English)');
+  } else if (filters.originCountry === 'international-nonenglish') {
+    paramLines.push('Origin: International (Non-English)');
+  }
   if (filters.oscarFilter) paramLines.push(`Best Picture: ${filters.oscarFilter}`);
   if (filters.aListCast) paramLines.push(`A-List Cast: ${filters.aListCast}`);
   if (filters.directorProminence) paramLines.push(`Director Prominence: ${filters.directorProminence}`);
@@ -199,7 +203,7 @@ export default function ResultsView({
                   title="Home"
                 >
                   <Home className="w-3.5 h-3.5" />
-                  <span className="hidden min-[360px]:inline">Home</span>
+                  <span className="hidden sm:inline">Home</span>
                 </button>
               </div>
               <div className="flex shrink-0 justify-center">
@@ -215,7 +219,7 @@ export default function ResultsView({
                     title="Surprise Me"
                   >
                     <Dices className={`w-3.5 h-3.5 ${rollingDice ? 'animate-pulse' : ''}`} aria-hidden />
-                    <span className="hidden min-[360px]:inline">{rollingDice ? 'Rolling…' : 'Surprise Me'}</span>
+                    <span className="hidden sm:inline">{rollingDice ? 'Rolling…' : 'Surprise Me'}</span>
                   </button>
                 )}
               </div>
@@ -288,7 +292,7 @@ export default function ResultsView({
                       title="Export results to CSV"
                     >
                       <Download className="w-3 h-3" aria-hidden />
-                      <span className="hidden min-[360px]:inline">Export</span>
+                      <span className="hidden sm:inline">Export</span>
                     </button>
                   )}
                   <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border-2 border-brass/50 bg-cherry-900/80 shadow-lg">

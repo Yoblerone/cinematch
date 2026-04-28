@@ -1,8 +1,10 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Star, ExternalLink, Play } from 'lucide-react';
+import { Star, ExternalLink, Play, ChevronDown } from 'lucide-react';
+import { useState } from 'react';
 import type { Movie } from '@/lib/types';
+import { parseTmdbMovieId } from '@/lib/tmdb';
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p';
 const IMDB_TITLE_BASE = 'https://www.imdb.com/title';
@@ -15,12 +17,140 @@ interface MovieCardProps {
   matchPercent?: number;
 }
 
+type WatchProviderApi = {
+  provider_id: number;
+  provider_name: string;
+  logo_path?: string | null;
+};
+
+type WatchProvidersPayload = {
+  region: string;
+  link: string | null;
+  flatrate: WatchProviderApi[];
+  rent: WatchProviderApi[];
+  buy: WatchProviderApi[];
+};
+
+function providerNamesUnique(rows: WatchProviderApi[]): string[] {
+  const seen = new Set<number>();
+  const out: string[] = [];
+  for (const r of rows) {
+    if (seen.has(r.provider_id)) continue;
+    seen.add(r.provider_id);
+    out.push(r.provider_name);
+  }
+  return out;
+}
+
+function StreamingProvidersDetail({
+  payload,
+  linkTextBase,
+  linkIconClass,
+  isFeatured,
+}: {
+  payload: WatchProvidersPayload;
+  linkTextBase: string;
+  linkIconClass: string;
+  isFeatured: boolean;
+}) {
+  const flat = providerNamesUnique(payload.flatrate);
+  const rent = providerNamesUnique(payload.rent);
+  const buy = providerNamesUnique(payload.buy);
+  const noneListed = flat.length === 0 && rent.length === 0 && buy.length === 0;
+
+  return (
+    <>
+      <p className="text-antique/90 mb-1.5">Where to watch ({payload.region})</p>
+      {flat.length > 0 ? (
+        <p>
+          <span className="text-brass-light font-medium">Subscribe </span>
+          <span>{flat.join(' · ')}</span>
+        </p>
+      ) : null}
+      {rent.length > 0 ? (
+        <p className={flat.length > 0 ? 'mt-1' : ''}>
+          <span className="text-brass-light font-medium">Rent </span>
+          <span>{rent.join(' · ')}</span>
+        </p>
+      ) : null}
+      {buy.length > 0 ? (
+        <p className={flat.length > 0 || rent.length > 0 ? 'mt-1' : ''}>
+          <span className="text-brass-light font-medium">Buy </span>
+          <span>{buy.join(' · ')}</span>
+        </p>
+      ) : null}
+      {noneListed ? (
+        <p className="text-antique italic">No streaming listings for this region in TMDB right now.</p>
+      ) : null}
+      {payload.link ? (
+        <a
+          href={payload.link}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`mt-2 inline-flex items-center gap-1 ${linkTextBase} ${isFeatured ? 'text-sm' : 'text-xs'}`}
+        >
+          <ExternalLink className={linkIconClass} aria-hidden />
+          TMDB availability page
+        </a>
+      ) : null}
+    </>
+  );
+}
+
 export default function MovieCard({ movie, index, variant = 'compact', matchPercent }: MovieCardProps) {
   const isFeatured = variant === 'featured';
   const ratingN = Number(movie.rating ?? 0);
   const posterUrl = movie.posterPath
     ? `${TMDB_IMAGE_BASE}/${isFeatured ? 'w500' : 'w342'}${movie.posterPath}`
     : null;
+
+  const tmdbNumericId = parseTmdbMovieId(movie.id);
+  const showStreamingUi = tmdbNumericId > 0;
+
+  const linkTextBase =
+    'inline-flex items-center gap-1 text-brass hover:text-neon-gold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brass/70 rounded-sm';
+  const linkIconClass = isFeatured ? 'w-3.5 h-3.5' : 'w-3 h-3';
+
+  const [streamingOpen, setStreamingOpen] = useState(false);
+  const [providersPayload, setProvidersPayload] = useState<WatchProvidersPayload | null>(null);
+  const [providersLoading, setProvidersLoading] = useState(false);
+  const [providersError, setProvidersError] = useState<string | null>(null);
+
+  const toggleStreaming = async () => {
+    if (streamingOpen) {
+      setStreamingOpen(false);
+      return;
+    }
+    setStreamingOpen(true);
+    if (providersPayload !== null || providersLoading) return;
+    setProvidersLoading(true);
+    setProvidersError(null);
+    try {
+      const res = await fetch(
+        `/api/tmdb/watch-providers?movieId=${encodeURIComponent(movie.id)}&region=US`
+      );
+      const json = (await res.json()) as WatchProvidersPayload & { error?: string; details?: string };
+      if (!res.ok) {
+        throw new Error(
+          typeof json.error === 'string' ? json.error : json.details ?? 'Could not load streaming info'
+        );
+      }
+      setProvidersPayload(json);
+    } catch (e) {
+      setProvidersError(e instanceof Error ? e.message : 'Could not load streaming info');
+    } finally {
+      setProvidersLoading(false);
+    }
+  };
+
+  const showLinksRow =
+    (movie.trailerKey != null && movie.trailerKey !== '') ||
+    !!movie.imdbId ||
+    showStreamingUi;
+
+  const streamingPanelId = `streaming-panel-${movie.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+  const streamingTriggerId = `streaming-trigger-${movie.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+
   return (
     <motion.article
       initial={{ opacity: 0, y: 20 }}
@@ -101,35 +231,77 @@ export default function MovieCard({ movie, index, variant = 'compact', matchPerc
             &ldquo;{movie.tagline}&rdquo;
           </p>
         )}
-        {(movie.trailerKey != null && movie.trailerKey !== '') || movie.imdbId ? (
-          <div
-            className={`mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 ${isFeatured ? 'text-sm' : 'text-xs'}`}
-          >
-            {movie.trailerKey != null && movie.trailerKey !== '' ? (
-              <a
-                href={`https://www.youtube.com/watch?v=${encodeURIComponent(movie.trailerKey)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`inline-flex items-center gap-1 text-brass hover:text-neon-gold transition-colors ${isFeatured ? 'text-sm' : 'text-xs'}`}
-                title="Watch trailer on YouTube"
+        {showLinksRow ? (
+          <>
+            <div
+              className={`mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 ${isFeatured ? 'text-sm' : 'text-xs'}`}
+            >
+              {movie.trailerKey != null && movie.trailerKey !== '' ? (
+                <a
+                  href={`https://www.youtube.com/watch?v=${encodeURIComponent(movie.trailerKey)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`${linkTextBase} ${isFeatured ? 'text-sm' : 'text-xs'}`}
+                  title="Watch trailer on YouTube"
+                >
+                  <Play className={`shrink-0 ${linkIconClass}`} aria-hidden />
+                  Trailer
+                </a>
+              ) : null}
+              {movie.imdbId ? (
+                <a
+                  href={`${IMDB_TITLE_BASE}/${movie.imdbId}/`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`${linkTextBase} ${isFeatured ? 'text-sm' : 'text-xs'}`}
+                  title="View on IMDB"
+                >
+                  <ExternalLink className={linkIconClass} aria-hidden />
+                  IMDB
+                </a>
+              ) : null}
+              {showStreamingUi ? (
+                <button
+                  type="button"
+                  id={streamingTriggerId}
+                  aria-expanded={streamingOpen}
+                  aria-controls={streamingPanelId}
+                  onClick={() => void toggleStreaming()}
+                  className={`${linkTextBase} ${isFeatured ? 'text-sm' : 'text-xs'} cursor-pointer bg-transparent border-none p-0 font-inherit`}
+                  title="Streaming availability (US)"
+                >
+                  Streaming
+                  <ChevronDown
+                    className={`shrink-0 ${linkIconClass} transition-transform duration-200 ${
+                      streamingOpen ? 'rotate-180' : ''
+                    }`}
+                    aria-hidden
+                  />
+                </button>
+              ) : null}
+            </div>
+            {streamingOpen && showStreamingUi ? (
+              <div
+                id={streamingPanelId}
+                role="region"
+                aria-labelledby={streamingTriggerId}
+                className={`mt-2 rounded-md border border-brass/40 bg-cherry-950/80 px-3 py-2 ${isFeatured ? 'text-sm' : 'text-xs'} text-cream/95`}
               >
-                <Play className={`shrink-0 ${isFeatured ? 'w-3.5 h-3.5' : 'w-3 h-3'}`} aria-hidden />
-                Trailer
-              </a>
+                {providersLoading ? (
+                  <p className="text-antique italic">Loading streaming…</p>
+                ) : providersError ? (
+                  <p className="text-amber-400/95">{providersError}</p>
+                ) : providersPayload ? (
+                  <StreamingProvidersDetail
+                    payload={providersPayload}
+                    linkTextBase={linkTextBase}
+                    linkIconClass={linkIconClass}
+                    isFeatured={isFeatured}
+                  />
+                ) : null}
+              </div>
             ) : null}
-            {movie.imdbId ? (
-              <a
-                href={`${IMDB_TITLE_BASE}/${movie.imdbId}/`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-brass hover:text-neon-gold transition-colors"
-                title="View on IMDB"
-              >
-                <ExternalLink className={isFeatured ? 'w-3.5 h-3.5' : 'w-3 h-3'} aria-hidden />
-                IMDB
-              </a>
-            ) : null}
-          </div>
+          </>
         ) : null}
       </div>
     </motion.article>

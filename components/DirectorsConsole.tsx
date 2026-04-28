@@ -301,7 +301,6 @@ export default function DirectorsConsole({
                     <label className="block text-sm font-medium text-brass-light mb-2">Origin</label>
                     <div className="flex flex-wrap gap-2">
                       {([
-                        { value: 'us', label: 'Hollywood' },
                         { value: 'international-english', label: 'Intl (English)' },
                         { value: 'international-nonenglish', label: 'Intl (Non-English)' },
                       ] as const).map(({ value, label }) => (
