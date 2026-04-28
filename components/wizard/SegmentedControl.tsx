@@ -23,15 +23,22 @@ interface SegmentedControlProps {
   className?: string;
 }
 
-const SEGMENT_META: { weight: FilterWeightStop; full: string; short: string; intentTitle: string }[] = [
-  { weight: FILTER_WEIGHT_LOW, full: 'Low', short: 'L', intentTitle: 'Subtle influence' },
-  { weight: FILTER_WEIGHT_MED, full: 'Medium', short: 'M', intentTitle: 'Balanced' },
-  { weight: FILTER_WEIGHT_HIGH, full: 'High', short: 'H', intentTitle: 'Strong driver' },
+const SEGMENT_META: { weight: FilterWeightStop; full: string; intentTitle: string }[] = [
+  { weight: FILTER_WEIGHT_LOW, full: 'Low', intentTitle: 'Subtle influence' },
+  { weight: FILTER_WEIGHT_MED, full: 'Medium', intentTitle: 'Balanced' },
+  { weight: FILTER_WEIGHT_HIGH, full: 'High', intentTitle: 'Strong driver' },
 ];
 
 /** Matches The Basics chips (e.g. decade / runtime in `DirectorsConsole`). */
 const chipBase =
-  'flex-1 min-w-0 basis-0 min-h-[44px] rounded-sm border-2 text-sm font-medium transition-all duration-300 touch-manipulation outline-none focus-visible:ring-2 focus-visible:ring-neon-gold focus-visible:ring-offset-2 focus-visible:ring-offset-cherry-950 px-3 py-2 flex items-center justify-center text-center';
+  'flex-1 min-w-0 basis-0 min-h-[44px] rounded-sm border-2 font-medium transition-all duration-300 touch-manipulation outline-none focus-visible:ring-2 focus-visible:ring-neon-gold focus-visible:ring-offset-2 focus-visible:ring-offset-cherry-950 py-2 flex items-center justify-center text-center';
+
+/** Wizard slate / narrow viewports: keep full words; shrink type instead of initials (see `density`). */
+function chipSizingClasses(density: SegmentedDensity): string {
+  return density === 'responsive'
+    ? 'px-1.5 text-[11px] leading-snug sm:px-3 sm:text-sm sm:leading-normal'
+    : 'px-3 text-sm';
+}
 
 export default function SegmentedControl({
   value,
@@ -91,7 +98,7 @@ export default function SegmentedControl({
       onKeyDown={onKeyDown}
       className={`flex gap-2 ${disabled ? 'opacity-50 pointer-events-none' : ''} ${className}`}
     >
-      {segments.map(({ weight, full, short, intentTitle }, i) => {
+      {segments.map(({ weight, full, intentTitle }, i) => {
         const selected = active === weight;
         const displayFull =
           mode === 'pacingBinary'
@@ -103,7 +110,6 @@ export default function SegmentedControl({
               : weight === FILTER_WEIGHT_MED
                 ? customLabels?.mid ?? full
                 : customLabels?.high ?? full;
-        const displayShort = displayFull.slice(0, 1).toUpperCase() || short;
         const displayTitle =
           mode === 'pacingBinary' ? `${displayFull} pacing preference` : intentTitle;
         return (
@@ -119,20 +125,13 @@ export default function SegmentedControl({
             disabled={disabled}
             title={displayTitle}
             onClick={() => onChange(weight)}
-            className={`${chipBase} ${
+            className={`${chipBase} ${chipSizingClasses(density)} ${
               selected
                 ? 'border-brass bg-brass/15 text-neon-gold shadow-[0_0_20px_rgba(184,134,11,0.4)]'
                 : 'border-brass/50 bg-transparent text-cream hover:border-brass hover:text-brass-light'
             } ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
           >
-            {density === 'full' ? (
-              displayFull
-            ) : (
-              <>
-                <span className="sm:hidden">{displayShort}</span>
-                <span className="hidden sm:inline">{displayFull}</span>
-              </>
-            )}
+            {displayFull}
           </button>
         );
       })}

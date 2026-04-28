@@ -9,7 +9,7 @@ interface EnergySliderRowProps {
   onToggleActive: (active: boolean) => void;
   onChange: (value: number) => void;
   optionLabels?: { low: string; mid?: string; high: string };
-  /** Wizard: full words; slate: compact on narrow viewports. */
+  /** Wizard: full-size chips; slate (`responsive`): smaller type on narrow screens, always full labels. */
   density?: SegmentedDensity;
   variant?: 'default' | 'pacingBinary';
 }
