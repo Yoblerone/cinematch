@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight, Sparkles, Home, Dices } from 'lucide-react';
-import type { FilterState, Movie } from '@/lib/types';
+import type { FilterState, Movie, ResultsDisclaimer } from '@/lib/types';
 import { defaultFilters } from '@/lib/types';
 import { FILTER_WEIGHT_LOW, FILTER_WEIGHT_HIGH } from '@/lib/filterWeightSegments';
 import { GENRE_OPTIONS } from '@/lib/optionSets';
@@ -114,6 +114,7 @@ export default function RedCarpetWizard() {
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
   const [showResults, setShowResults] = useState(false);
   const [results, setResults] = useState<Movie[]>([]);
+  const [resultsDisclaimer, setResultsDisclaimer] = useState<ResultsDisclaimer | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rollingDice, setRollingDice] = useState(false);
@@ -172,9 +173,9 @@ export default function RedCarpetWizard() {
             body: bodyStr,
             signal: ac.signal,
           });
-          let data: { movies?: Movie[] } = {};
+          let data: { movies?: Movie[]; disclaimer?: ResultsDisclaimer | null } = {};
           try {
-            data = (await res.json()) as { movies?: Movie[] };
+            data = (await res.json()) as { movies?: Movie[]; disclaimer?: ResultsDisclaimer | null };
           } catch {
             /* non-JSON body */
           }
@@ -183,8 +184,10 @@ export default function RedCarpetWizard() {
               const list = data.movies ?? [];
               console.log('Client: Total Movies Received (session restore):', list.length);
               setResults(list);
+              setResultsDisclaimer(data.disclaimer ?? null);
             } else {
               setResults([]);
+              setResultsDisclaimer(null);
               setError(
                 typeof (data as { error?: string }).error === 'string'
                   ? (data as { error: string }).error
@@ -195,6 +198,7 @@ export default function RedCarpetWizard() {
         } catch (e) {
           if (!cancelled) {
             setResults([]);
+            setResultsDisclaimer(null);
             if (e instanceof Error && e.name !== 'AbortError') {
               setError(e.message);
             } else if (e instanceof Error && e.name === 'AbortError') {
@@ -330,10 +334,13 @@ export default function RedCarpetWizard() {
             : `Request failed (${res.status})`;
         setError((data as { error?: string; details?: string } | null)?.error ?? (data as { details?: string } | null)?.details ?? fallback);
         setResults([]);
+        setResultsDisclaimer(null);
       } else {
-        const list = (data as { movies?: Movie[] } | null)?.movies ?? [];
+        const payload = data as { movies?: Movie[]; disclaimer?: ResultsDisclaimer | null } | null;
+        const list = payload?.movies ?? [];
         console.log('Client: Total Movies Received:', list.length);
         setResults(list);
+        setResultsDisclaimer(payload?.disclaimer ?? null);
         try {
           sessionStorage.setItem(SESSION_KEY, JSON.stringify({ filters: f, wasOnResults: true }));
         } catch {
@@ -343,6 +350,7 @@ export default function RedCarpetWizard() {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Network error');
       setResults([]);
+      setResultsDisclaimer(null);
     } finally {
       setLoading(false);
     }
@@ -393,6 +401,7 @@ export default function RedCarpetWizard() {
             setStep(1);
           }}
           results={results}
+          resultsDisclaimer={resultsDisclaimer}
           loading={loading}
           error={error}
           onRefresh={fetchResults}

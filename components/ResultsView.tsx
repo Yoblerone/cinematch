@@ -3,10 +3,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Home, ChevronLeft, ChevronRight, Dices, Download } from 'lucide-react';
-import type { FilterState, Movie } from '@/lib/types';
+import type { FilterState, Movie, ResultsDisclaimer } from '@/lib/types';
 import { defaultFilters } from '@/lib/types';
 import { formatOriginalLanguageCsvLabel } from '@/lib/originalLanguage';
 import MovieCard from './MovieCard';
+import ResultsDisclaimerCard from './ResultsDisclaimerCard';
 import DirectorsConsole from './DirectorsConsole';
 import SparkleBackground from './SparkleBackground';
 import MarqueeLogo from './MarqueeLogo';
@@ -61,6 +62,8 @@ interface ResultsViewProps {
   /** Chaos Mode: random filters + random page. */
   onSurpriseMe?: () => void;
   rollingDice?: boolean;
+  /** When strict runtime / decade / Oscar intent needed a softer grid. */
+  resultsDisclaimer?: ResultsDisclaimer | null;
 }
 
 /** Escape a single CSV cell value: always wraps in quotes to handle commas and special chars. */
@@ -142,6 +145,7 @@ export default function ResultsView({
   onRefresh,
   onSurpriseMe,
   rollingDice = false,
+  resultsDisclaimer = null,
 }: ResultsViewProps) {
   const [isSlateOpen, setIsSlateOpen] = useState(false);
   const [resultsOffset, setResultsOffset] = useState(0);
@@ -161,20 +165,27 @@ export default function ResultsView({
     internalGridRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   }, [resultsOffset]);
 
-  const start = resultsOffset * RESULTS_PAGE_SIZE;
   useEffect(() => {
-    if (results.length > 0 && start >= results.length) setResultsOffset(0);
-  }, [results.length, start]);
+    if (results.length === 0) return;
+    const disc = Boolean(resultsDisclaimer?.show && results.length > 0);
+    const firstSlots = disc ? RESULTS_PAGE_SIZE - 1 : RESULTS_PAGE_SIZE;
+    const idx = resultsOffset === 0 ? 0 : firstSlots + (resultsOffset - 1) * RESULTS_PAGE_SIZE;
+    if (idx >= results.length) setResultsOffset(0);
+  }, [results.length, resultsOffset, resultsDisclaimer?.show]);
 
-  const displayed = results.slice(start, start + RESULTS_PAGE_SIZE);
-  const hasNext = start + RESULTS_PAGE_SIZE < results.length;
+  const showDisclaimerCell = Boolean(resultsDisclaimer?.show && results.length > 0);
+  const firstPageMovieSlots = showDisclaimerCell ? RESULTS_PAGE_SIZE - 1 : RESULTS_PAGE_SIZE;
+  const movieStartIdx =
+    resultsOffset === 0 ? 0 : firstPageMovieSlots + (resultsOffset - 1) * RESULTS_PAGE_SIZE;
+  const movieSlotCount = resultsOffset === 0 ? firstPageMovieSlots : RESULTS_PAGE_SIZE;
+  const displayed = results.slice(movieStartIdx, movieStartIdx + movieSlotCount);
+
+  const hasNext = movieStartIdx + movieSlotCount < results.length;
   const hasPrevious = resultsOffset > 0;
   const pageLabel =
     results.length === 0
       ? ''
-      : results.length <= RESULTS_PAGE_SIZE
-        ? `1–${results.length}`
-        : `${start + 1}–${Math.min(start + RESULTS_PAGE_SIZE, results.length)} of ${results.length}`;
+      : `${movieStartIdx + 1}–${movieStartIdx + displayed.length} of ${results.length}`;
 
   const hasOsarFilter = filters.oscarFilter != null;
   const hasSecondaryFilter =
@@ -303,8 +314,11 @@ export default function ResultsView({
                     className={`min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:py-8 custom-scrollbar overscroll-y-contain ${isSlateOpen ? 'blur-sm pointer-events-none select-none' : ''}`}
                   >
                     <div className="grid min-w-0 grid-cols-1 gap-3 min-[380px]:grid-cols-2 sm:gap-4 lg:grid-cols-3">
+                      {resultsOffset === 0 && showDisclaimerCell && resultsDisclaimer ? (
+                        <ResultsDisclaimerCard disclaimer={resultsDisclaimer} index={0} />
+                      ) : null}
                       {displayed.map((movie, i) => {
-                        const globalIdx = start + i;
+                        const globalIdx = movieStartIdx + i;
                         const matchPercent =
                           movie.matchPercentage != null
                             ? movie.matchPercentage

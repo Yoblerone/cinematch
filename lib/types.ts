@@ -230,6 +230,21 @@ export interface FilterState {
   originalLanguage: OriginalLanguageChoice;
 }
 
+/** Subset of hard filters that can drive the “relax filters” disclaimer card. */
+export type ResultsDisclaimerHint = 'runtime' | 'decade' | 'oscar';
+
+export interface ResultsDisclaimer {
+  show: boolean;
+  hints: ResultsDisclaimerHint[];
+  /** True when Best Picture strict pool was padded from general discovery. */
+  relaxedOscar: boolean;
+}
+
+export interface TmdbMatchResponse {
+  movies: Movie[];
+  disclaimer: ResultsDisclaimer | null;
+}
+
 export const defaultFilters: FilterState = {
   crowd: null,
   narrative_pacing: null,

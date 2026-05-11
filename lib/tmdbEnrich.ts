@@ -3,7 +3,19 @@
  * Derives pacing, humor, romance, etc. from genre + keywords when TMDB has no direct field.
  */
 
-import type { Movie, Genre, Theme, VisualStyle, Soundtrack, CriticsVsFans, Decade, FilterState, OriginalLanguageChoice } from './types';
+import type {
+  Movie,
+  Genre,
+  Theme,
+  VisualStyle,
+  Soundtrack,
+  CriticsVsFans,
+  Decade,
+  FilterState,
+  OriginalLanguageChoice,
+  TmdbMatchResponse,
+} from './types';
+import { finalizeMatchPresentation } from './matchFinalize';
 import {
   GENRE_ID_TO_NAME,
   GENRE_NAME_TO_ID,
@@ -408,7 +420,11 @@ export async function fetchMovieDetails(apiKey: string, movieId: number): Promis
  * doesn't include imdb_id or videos. We fetch details for the small handful of such films.
  */
 async function patchBackfillDetails(apiKey: string, movies: Movie[]): Promise<Movie[]> {
-  const needsPatch = movies.filter((m) => m.claudeSuggested && !m.imdbId);
+  const needsPatch = movies.filter(
+    (m) =>
+      m.claudeSuggested &&
+      (!m.imdbId || m.posterPath == null || String(m.posterPath).trim() === '')
+  );
   if (needsPatch.length === 0) return movies;
 
   const patchMap = new Map<string, Partial<Movie>>();
@@ -418,10 +434,12 @@ async function patchBackfillDetails(apiKey: string, movies: Movie[]): Promise<Mo
       if (!tmdbId) return;
       const details = await fetchMovieDetails(apiKey, tmdbId);
       if (!details) return;
+      const pp = details.poster_path ?? null;
       patchMap.set(m.id, {
         imdbId: details.imdb_id ?? undefined,
         trailerKey: extractYoutubeTrailerKey(details.videos) ?? null,
         tagline: details.tagline?.trim() || m.tagline || '',
+        posterPath: pp != null && pp !== '' ? pp : m.posterPath,
       });
     })
   );
@@ -1467,13 +1485,44 @@ function preFilterOscarIds(ids: number[], filters: FilterState): number[] {
   return ids.slice(0, MAX_OSCAR_ENRICH);
 }
 
+/**
+ * When Best Picture mode cannot fill the grid alone, pad from general discovery (same filters, Oscar off).
+ */
+async function padOscarShortfallFromDiscover(
+  apiKey: string,
+  movies: Movie[],
+  filters: FilterState,
+  options?: GetTmdbMatchesOptions
+): Promise<{ movies: Movie[]; relaxedOscar: boolean }> {
+  if (filters.oscarFilter == null || movies.length >= 36) {
+    return { movies, relaxedOscar: false };
+  }
+  const pad = await getTmdbMatches(apiKey, { ...filters, oscarFilter: null }, options);
+  const seen = new Set(movies.map((m) => parseTmdbMovieId(m.id)));
+  let relaxedOscar = false;
+  const out = [...movies];
+  for (const m of pad.movies) {
+    const id = parseTmdbMovieId(m.id);
+    if (id <= 0 || seen.has(id)) continue;
+    seen.add(id);
+    out.push(m);
+    relaxedOscar = true;
+    if (out.length >= 36) break;
+  }
+  return {
+    movies: filterMoviesForOriginalLanguageChoice(out.slice(0, 36), filters.originalLanguage),
+    relaxedOscar,
+  };
+}
+
 /** Fetch and enrich movies by TMDB IDs only; then keep only those in the allowed set. */
 async function fetchAndEnrichByIds(
   apiKey: string,
   ids: number[],
   allowed: (id: number) => boolean,
-  filters: FilterState
-): Promise<Movie[]> {
+  filters: FilterState,
+  options?: GetTmdbMatchesOptions
+): Promise<TmdbMatchResponse> {
   // Pre-filter by decade and cap total to avoid enriching hundreds of films.
   const filteredIds = preFilterOscarIds(ids, filters);
   const rawResults: TmdbMovieResult[] = filteredIds.map((id) => stubResult(id));
@@ -1502,7 +1551,11 @@ async function fetchAndEnrichByIds(
       if (yearDiff !== 0) return yearDiff;
       return (b.oscarWinner ? 1 : 0) - (a.oscarWinner ? 1 : 0);
     });
-    return filterMoviesForOriginalLanguageChoice(result.slice(0, 36), filters.originalLanguage);
+    let list = filterMoviesForOriginalLanguageChoice(result.slice(0, 36), filters.originalLanguage);
+    const paddedList = await padOscarShortfallFromDiscover(apiKey, list, filters, options);
+    return finalizeMatchPresentation(paddedList.movies, filters, {
+      relaxedOscarPadding: paddedList.relaxedOscar,
+    });
   }
 
   // Secondary filters active (vibe sliders, decade, etc.) — run Claude rerank for best ordering.
@@ -1526,7 +1579,11 @@ async function fetchAndEnrichByIds(
       };
     })
     .slice(0, 36);
-  return filterMoviesForOriginalLanguageChoice(sliced, filters.originalLanguage);
+  let list = filterMoviesForOriginalLanguageChoice(sliced, filters.originalLanguage);
+  const paddedList = await padOscarShortfallFromDiscover(apiKey, list, filters, options);
+  return finalizeMatchPresentation(paddedList.movies, filters, {
+    relaxedOscarPadding: paddedList.relaxedOscar,
+  });
 }
 
 /** Live API: discover/movie with genres + runtime/decade; enrich → keyword-based vibe rank (no Discover keyword filter). */
@@ -1535,7 +1592,7 @@ export async function getTmdbMatches(
   filters: FilterState,
   /** @deprecated Full Grid rule handles pagination; ignored. */
   _options?: GetTmdbMatchesOptions
-): Promise<Movie[]> {
+): Promise<TmdbMatchResponse> {
   const weights = {
     narrative_pacing: filters.narrative_pacing,
     emotional_tone: filters.emotional_tone,
@@ -1561,28 +1618,17 @@ export async function getTmdbMatches(
 
   if (isWinnerOnly) {
     const ids = getOscarWinnerIds();
-    return fetchAndEnrichByIds(apiKey, ids, isOscarWinnerId, filters);
+    return fetchAndEnrichByIds(apiKey, ids, isOscarWinnerId, filters, _options);
   }
 
   if (isNomineeOnly) {
     const ids = getOscarNomineeIds();
-    return fetchAndEnrichByIds(apiKey, ids, isOscarNomineeId, filters);
+    return fetchAndEnrichByIds(apiKey, ids, isOscarNomineeId, filters, _options);
   }
 
   if (isBothOnly) {
     const ids = getOscarBothIds();
-    return fetchAndEnrichByIds(apiKey, ids, isOscarListedId, filters);
-  }
-
-  /**
-   * Prestige (director prominence) 80–100 + Oscar Any: strict Best Picture pool only (winners + nominees truth list).
-   */
-  if (
-    filters.directorProminence === 'high' &&
-    filters.oscarFilter == null
-  ) {
-    const ids = getOscarBothIds();
-    return fetchAndEnrichByIds(apiKey, ids, isOscarListedId, filters);
+    return fetchAndEnrichByIds(apiKey, ids, isOscarListedId, filters, _options);
   }
 
   const baseParams: {
@@ -1949,7 +1995,8 @@ export async function getTmdbMatches(
   const rerankResults = hasActiveVibe ? await claudeRerank(poolForRerank, filters, apiKey) : baselineForClaude.slice(0, 36);
   const finalResults = await patchBackfillDetails(apiKey, rerankResults);
   console.log('Total Movies Returned (deep-review vibe pool):', finalResults.length);
-  return filterMoviesForOriginalLanguageChoice(finalResults, filters.originalLanguage);
+  const langFiltered = filterMoviesForOriginalLanguageChoice(finalResults, filters.originalLanguage);
+  return finalizeMatchPresentation(langFiltered, filters);
 }
 
 /**

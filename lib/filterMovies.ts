@@ -103,7 +103,7 @@ function atmosphereScore(movie: Movie, filters: FilterState): number {
 }
 
 /** True when the movie’s TMDB `genre_ids` include every selected genre id (preferred), else name fallback. */
-function movieHasAllSelectedGenres(movie: Movie, filters: FilterState): boolean {
+export function movieHasAllSelectedGenres(movie: Movie, filters: FilterState): boolean {
   if (filters.genre.length === 0) return false;
   const needed = filters.genre.map((g) => GENRE_NAME_TO_ID[g]).filter((id): id is number => id != null);
   if (needed.length !== filters.genre.length) {

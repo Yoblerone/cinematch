@@ -93,8 +93,8 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const movies = await getTmdbMatches(apiKey, filters, { discoverStartPage });
-    return NextResponse.json({ movies });
+    const { movies, disclaimer } = await getTmdbMatches(apiKey, filters, { discoverStartPage });
+    return NextResponse.json({ movies, disclaimer });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     return NextResponse.json(
