@@ -4,13 +4,29 @@ import { motion } from 'framer-motion';
 import { Clapperboard } from 'lucide-react';
 import type { ResultsDisclaimer } from '@/lib/types';
 
+const HINT_LABEL: Record<string, string> = {
+  runtime: 'runtime',
+  decade: 'decade',
+  oscar: 'Best Picture',
+};
+
+function hintPhrase(summary: string[]): string {
+  if (summary.length === 0) return 'a few';
+  if (summary.length === 1) return summary[0]!;
+  if (summary.length === 2) return `${summary[0]!} or ${summary[1]!}`;
+  return `${summary[0]!}, ${summary[1]!}, or more`;
+}
+
 export default function ResultsDisclaimerCard({
+  disclaimer,
   index,
-  disclaimer: _disclaimer,
 }: {
   disclaimer: ResultsDisclaimer;
   index: number;
 }) {
+  const summary = disclaimer.hints.map((h) => HINT_LABEL[h] ?? h);
+  const specific = hintPhrase(summary);
+
   return (
     <motion.article
       initial={{ opacity: 0, y: 12 }}
@@ -27,8 +43,10 @@ export default function ResultsDisclaimerCard({
               Oops — not a perfect match
             </p>
             <p className="mt-1.5 text-xs leading-snug text-cream/85 sm:text-sm">
-              Try relaxing your Best Picture or decade filters for better results. The rest of this
-              grid is our next-best lineup
+              Try relaxing your{' '}
+              <span className="font-medium text-neon-gold/90">{specific}</span>{' '}
+              {summary.length > 1 ? 'filters' : 'filter'} for better results. The rest of this grid
+              is our next-best lineup
             </p>
           </div>
         </div>
