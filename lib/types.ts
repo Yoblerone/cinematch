@@ -87,7 +87,16 @@ export type Theme =
 /** `both` is shown in the UI as **Top Rated** (combined rating + fan engagement). */
 export type CriticsVsFans = 'critics' | 'fans' | 'both';
 
-export type Decade = '60s' | '70s' | '80s' | '90s' | '2000s' | '2010s' | '2020s' | null;
+export type Decade =
+  | '60s'
+  | '70s'
+  | '80s'
+  | '90s'
+  | '2000s'
+  | '2010s'
+  | '2020s'
+  | 'new-releases'
+  | null;
 
 export type Runtime = 'short' | 'medium' | 'long' | null; // short <90, medium 90–150, long 150+
 
@@ -116,6 +125,8 @@ export interface Movie {
   genre: Genre[];
   /** TMDB `genre_ids` when available — used for perfect multi-genre match scoring. */
   genreIds?: number[];
+  /** TMDB `release_date` (YYYY-MM-DD) when available — era / New Releases matching. */
+  releaseDate?: string | null;
   /** TMDB plot summary when available — thematic density keyword scan. */
   overview?: string | null;
   /** TMDB keyword names from movie details (append_to_response=keywords) — vibe scoring. */
@@ -218,7 +229,7 @@ export interface FilterState {
    * - `any`: no Best Picture filtering
    */
   oscarFilter: 'nominee' | 'winner' | 'both' | null;
-  /** Multiple decades; empty = any. Date range spans min–max. */
+  /** Era chips (historical decades + `new-releases`); empty = any. OR across selections. */
   decade: Decade[];
   runtime: Runtime;
   /** Null = Off (ignored). */
@@ -231,11 +242,23 @@ export interface FilterState {
 }
 
 /** Subset of hard filters that can drive the “relax filters” disclaimer card. */
-export type ResultsDisclaimerHint = 'runtime' | 'decade' | 'oscar';
+export type ResultsDisclaimerHint =
+  | 'runtime'
+  | 'genre'
+  | 'language'
+  | 'new-releases'
+  | 'decade'
+  | 'oscar';
 
 export interface ResultsDisclaimer {
   show: boolean;
+  /** Index in `movies` where the oops card is rendered (immediately before that title). */
+  insertAt: number;
   hints: ResultsDisclaimerHint[];
+  /** Titles that pass every active hard filter (incl. language). */
+  strictMatchCount: number;
+  /** True when the grid includes next-best rows below the oops divider. */
+  hasRelaxedFill: boolean;
   /** True when Best Picture strict pool was padded from general discovery. */
   relaxedOscar: boolean;
 }

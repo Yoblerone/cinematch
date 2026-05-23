@@ -8,6 +8,7 @@ import { MAX_GENRES } from '@/lib/types';
 import { GENRE_OPTIONS } from '@/lib/optionSets';
 import { FILTER_WEIGHT_LOW } from '@/lib/filterWeightSegments';
 import { CURATED_ORIGINAL_LANGUAGE_OPTIONS } from '@/lib/originalLanguage';
+import { ERA_CHIP_OPTIONS } from '@/lib/era';
 import EnergySliderRow from '@/components/wizard/EnergySliderRow';
 
 const SLIDER_CONFIG = [
@@ -258,10 +259,9 @@ export default function DirectorsConsole({
                     sublabel="(up to 3)"
                   />
                   <div>
-                    <label className="block text-sm font-medium text-brass-light mb-2">Decade</label>
+                    <label className="block text-sm font-medium text-brass-light mb-2">Era</label>
                     <div className="flex flex-wrap gap-2">
-                      {(['60s', '70s', '80s', '90s', '2000s', '2010s', '2020s'] as const).map((label) => {
-                        const value = label as NonNullable<Decade>;
+                      {ERA_CHIP_OPTIONS.map(({ value, label }) => {
                         const selected = filters.decade.includes(value);
                         return (
                           <button

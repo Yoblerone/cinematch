@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Home, ChevronLeft, ChevronRight, Dices, Download } from 'lucide-react';
 import type { FilterState, Movie, ResultsDisclaimer } from '@/lib/types';
 import { defaultFilters } from '@/lib/types';
 import { formatOriginalLanguageCsvLabel } from '@/lib/originalLanguage';
+import { formatEraList } from '@/lib/era';
+import { buildResultsGrid } from '@/lib/resultsGrid';
 import MovieCard from './MovieCard';
 import ResultsDisclaimerCard from './ResultsDisclaimerCard';
 import DirectorsConsole from './DirectorsConsole';
@@ -82,7 +84,7 @@ function buildCsvExport(filters: FilterState, results: Movie[]): string {
 
   const paramLines: string[] = [];
   if (filters.genre.length > 0) paramLines.push(`Genre: ${filters.genre.join(' + ')}`);
-  if (filters.decade.length > 0) paramLines.push(`Decade: ${filters.decade.join(', ')}`);
+  if (filters.decade.length > 0) paramLines.push(`Era: ${formatEraList(filters.decade)}`);
   if (filters.runtime) paramLines.push(`Runtime: ${filters.runtime}`);
   const langCsv = formatOriginalLanguageCsvLabel(filters.originalLanguage);
   if (langCsv) paramLines.push(`Language: ${langCsv}`);
@@ -101,7 +103,7 @@ function buildCsvExport(filters: FilterState, results: Movie[]): string {
 
   // Column A = descriptor, Column B = value (two-column layout, safe for Excel).
   const header = [
-    `Cinematch Export`,
+    `GoodReels Export`,
     `Date,${csvCell(dateStr)}`,
     `Time,${csvCell(timeStr)}`,
     `Search Parameters,${csvCell(paramSummary)}`,
@@ -132,7 +134,7 @@ function buildCsvFilename(): string {
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const dd = String(now.getDate()).padStart(2, '0');
   const yyyy = now.getFullYear();
-  return `cinematch-${mm}-${dd}-${yyyy}.csv`;
+  return `goodreels-${mm}-${dd}-${yyyy}.csv`;
 }
 
 export default function ResultsView({
@@ -165,27 +167,25 @@ export default function ResultsView({
     internalGridRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   }, [resultsOffset]);
 
+  const gridCells = useMemo(
+    () => buildResultsGrid(results, resultsDisclaimer),
+    [results, resultsDisclaimer]
+  );
+
   useEffect(() => {
-    if (results.length === 0) return;
-    const disc = Boolean(resultsDisclaimer?.show && results.length > 0);
-    const firstSlots = disc ? RESULTS_PAGE_SIZE - 1 : RESULTS_PAGE_SIZE;
-    const idx = resultsOffset === 0 ? 0 : firstSlots + (resultsOffset - 1) * RESULTS_PAGE_SIZE;
-    if (idx >= results.length) setResultsOffset(0);
-  }, [results.length, resultsOffset, resultsDisclaimer?.show]);
+    if (gridCells.length === 0) return;
+    const pageStart = resultsOffset * RESULTS_PAGE_SIZE;
+    if (pageStart >= gridCells.length) setResultsOffset(0);
+  }, [gridCells.length, resultsOffset]);
 
-  const showDisclaimerCell = Boolean(resultsDisclaimer?.show && results.length > 0);
-  const firstPageMovieSlots = showDisclaimerCell ? RESULTS_PAGE_SIZE - 1 : RESULTS_PAGE_SIZE;
-  const movieStartIdx =
-    resultsOffset === 0 ? 0 : firstPageMovieSlots + (resultsOffset - 1) * RESULTS_PAGE_SIZE;
-  const movieSlotCount = resultsOffset === 0 ? firstPageMovieSlots : RESULTS_PAGE_SIZE;
-  const displayed = results.slice(movieStartIdx, movieStartIdx + movieSlotCount);
-
-  const hasNext = movieStartIdx + movieSlotCount < results.length;
+  const pageStart = resultsOffset * RESULTS_PAGE_SIZE;
+  const displayed = gridCells.slice(pageStart, pageStart + RESULTS_PAGE_SIZE);
+  const hasNext = pageStart + RESULTS_PAGE_SIZE < gridCells.length;
   const hasPrevious = resultsOffset > 0;
   const pageLabel =
-    results.length === 0
+    gridCells.length === 0
       ? ''
-      : `${movieStartIdx + 1}–${movieStartIdx + displayed.length} of ${results.length}`;
+      : `${pageStart + 1}–${pageStart + displayed.length} of ${gridCells.length}`;
 
   const hasOsarFilter = filters.oscarFilter != null;
   const hasSecondaryFilter =
@@ -220,7 +220,7 @@ export default function ResultsView({
                 </button>
               </div>
               <div className="flex shrink-0 justify-center">
-                <MarqueeLogo text="CINEMATCH" />
+                <MarqueeLogo />
               </div>
               <div className="flex min-w-0 justify-center">
                 {onSurpriseMe && (
@@ -314,22 +314,29 @@ export default function ResultsView({
                     className={`min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:py-8 custom-scrollbar overscroll-y-contain ${isSlateOpen ? 'blur-sm pointer-events-none select-none' : ''}`}
                   >
                     <div className="grid min-w-0 grid-cols-1 gap-3 min-[380px]:grid-cols-2 sm:gap-4 lg:grid-cols-3">
-                      {resultsOffset === 0 && showDisclaimerCell && resultsDisclaimer ? (
-                        <ResultsDisclaimerCard disclaimer={resultsDisclaimer} index={0} />
-                      ) : null}
-                      {displayed.map((movie, i) => {
-                        const globalIdx = movieStartIdx + i;
+                      {displayed.map((cell, i) => {
+                        const gridIdx = pageStart + i;
+                        if (cell.type === 'disclaimer') {
+                          return resultsDisclaimer ? (
+                            <ResultsDisclaimerCard
+                              key="results-disclaimer"
+                              disclaimer={resultsDisclaimer}
+                              index={gridIdx}
+                            />
+                          ) : null;
+                        }
+                        const movie = cell.movie;
                         const matchPercent =
                           movie.matchPercentage != null
                             ? movie.matchPercentage
                             : movie.rating >= 0.5
                               ? Math.round((movie.rating / 10) * 100)
-                              : Math.round(Math.min(99, Math.max(65, 96 - globalIdx * 0.4)));
+                              : Math.round(Math.min(99, Math.max(65, 96 - cell.resultIndex * 0.4)));
                         return (
                           <MovieCard
                             key={movie.id}
                             movie={movie}
-                            index={globalIdx}
+                            index={cell.resultIndex}
                             variant="compact"
                             matchPercent={shouldShowMatchPercent ? matchPercent : undefined}
                           />

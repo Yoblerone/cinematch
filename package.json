@@ -1,5 +1,5 @@
 {
-  "name": "cinematch",
+  "name": "goodreels",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -11,6 +11,7 @@
     "fetch-best-picture-posters": "node scripts/fetch-best-picture-posters.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.106.1",
     "@vercel/analytics": "^2.0.1",
     "framer-motion": "^11.0.0",
     "lucide-react": "^0.400.0",

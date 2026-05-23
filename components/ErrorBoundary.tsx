@@ -22,7 +22,7 @@ export default class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('Cinematch error:', error, errorInfo);
+    console.error('GoodReels error:', error, errorInfo);
   }
 
   render() {

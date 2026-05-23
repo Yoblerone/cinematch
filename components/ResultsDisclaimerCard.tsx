@@ -3,9 +3,13 @@
 import { motion } from 'framer-motion';
 import { Clapperboard } from 'lucide-react';
 import type { ResultsDisclaimer } from '@/lib/types';
+import { RESULTS_GRID_SIZE } from '@/lib/matchFinalize';
 
 const HINT_LABEL: Record<string, string> = {
   runtime: 'runtime',
+  genre: 'genre',
+  language: 'language',
+  'new-releases': 'New Releases',
   decade: 'decade',
   oscar: 'Best Picture',
 };
@@ -26,6 +30,24 @@ export default function ResultsDisclaimerCard({
 }) {
   const summary = disclaimer.hints.map((h) => HINT_LABEL[h] ?? h);
   const specific = hintPhrase(summary);
+  const strict = disclaimer.strictMatchCount ?? 0;
+  const filterWord = summary.length > 1 ? 'filters' : 'filter';
+  const hasRelaxedFill = Boolean(disclaimer.hasRelaxedFill);
+
+  let body: string;
+  const mentionsNewReleases = disclaimer.hints.includes('new-releases');
+
+  if (strict === 0 && mentionsNewReleases) {
+    body = `No films in the last 180 days for this combo. Titles below are older picks — try relaxing ${specific} ${filterWord} for fresher matches.`;
+  } else if (strict === 0) {
+    body = `No perfect matches for this combo. Try relaxing your ${specific} ${filterWord} — the titles below are our closest picks.`;
+  } else if (!hasRelaxedFill) {
+    body = `Only ${strict} perfect match${strict === 1 ? '' : 'es'} for this combo (we aim for ${RESULTS_GRID_SIZE}). Try relaxing your ${specific} ${filterWord} in the wizard.`;
+  } else if (mentionsNewReleases) {
+    body = `We found ${strict} match${strict === 1 ? '' : 'es'} from the last 180 days. Below the divider are older titles — relax ${specific} ${filterWord} for a fresher grid.`;
+  } else {
+    body = `We found ${strict} perfect match${strict === 1 ? '' : 'es'}. Try relaxing your ${specific} ${filterWord} for a fuller grid — below are our next-best picks.`;
+  }
 
   return (
     <motion.article
@@ -42,12 +64,7 @@ export default function ResultsDisclaimerCard({
             <p className="font-display text-sm font-semibold text-amber-200 sm:text-base">
               Oops — not a perfect match
             </p>
-            <p className="mt-1.5 text-xs leading-snug text-cream/85 sm:text-sm">
-              Try relaxing your{' '}
-              <span className="font-medium text-neon-gold/90">{specific}</span>{' '}
-              {summary.length > 1 ? 'filters' : 'filter'} for better results. The rest of this grid
-              is our next-best lineup
-            </p>
+            <p className="mt-1.5 text-xs leading-snug text-cream/85 sm:text-sm">{body}</p>
           </div>
         </div>
       </div>

@@ -17,7 +17,7 @@ import SparkleBackground from './SparkleBackground';
 import MarqueeLogo from './MarqueeLogo';
 
 const STEPS = 3;
-const SESSION_KEY = 'cinematch-results-state';
+const SESSION_KEY = 'goodreels-results-state';
 const ENERGY_KEY_TO_LEGACY: Record<
   | 'narrative_pacing'
   | 'emotional_tone'
@@ -431,7 +431,7 @@ export default function RedCarpetWizard() {
               </button>
             </div>
             <div className="flex justify-center shrink-0">
-              <MarqueeLogo text="CINEMATCH" />
+              <MarqueeLogo />
             </div>
             <div className="flex justify-center min-w-0">
               <button

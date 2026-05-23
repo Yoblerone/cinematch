@@ -1,4 +1,4 @@
-# Connecting Cinematch to TMDB (real data)
+# Connecting GoodReels to TMDB (real data)
 
 ## 1. Get a TMDB API key
 
@@ -23,7 +23,7 @@
 
 ## 3. What’s implemented (TMDB-only flow)
 
-Cinematch uses **only TMDB** for results. There is no mock data in the main flow.
+GoodReels uses **only TMDB** for results. There is no mock data in the main flow.
 
 - **Find my match**  
   - Sends your full wizard filters to **`POST /api/tmdb/match`**.  

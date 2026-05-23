@@ -255,7 +255,7 @@ input[type="range"]::-moz-range-thumb {
   scrollbar-color: var(--brass) var(--cherry-900);
 }
 
-/* Cinematch yellow scrollbar (results grid, shared scroll areas) */
+/* GoodReels yellow scrollbar (results grid, shared scroll areas) */
 .custom-scrollbar {
   scrollbar-gutter: stable;
 }

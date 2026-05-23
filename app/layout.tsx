@@ -14,8 +14,9 @@ const dmSans = DM_Sans({
 });
 
 export const metadata: Metadata = {
-  title: 'Cinematch — Premium Movie Discovery',
+  title: 'GoodReels — Premium Movie Discovery',
   description: 'Find your perfect film with the Red Carpet Wizard.',
+  metadataBase: new URL('https://goodreels.app'),
 };
 
 export default function RootLayout({

@@ -1,9 +1,15 @@
 /**
- * TMDB integration for Cinematch.
+ * TMDB integration for GoodReels.
  * Get an API key at https://www.themoviedb.org/settings/api and set TMDB_API_KEY in .env.local.
  */
 
 import type { Movie, Genre, Decade, Runtime, Theme, VisualStyle, Soundtrack } from './types';
+import {
+  filterIncludesNewReleases,
+  NEW_RELEASES_DISCOVER_POPULARITY_FLOOR,
+  NEW_RELEASES_DISCOVER_VOTE_FLOOR,
+  resolveEraDiscoverDateBounds,
+} from './era';
 
 /** TMDB genre list: https://developer.themoviedb.org/reference/genre-movie-list */
 export const GENRE_ID_TO_NAME: Record<number, Genre> = {
@@ -65,16 +71,6 @@ export type SmartHarvestQuerySlice = {
   withRuntimeLte?: number;
   /** Comma-separated genre IDs placed first in `with_genres` (TMDB ordering / relevance bias). */
   genrePrimaryHeadComma?: string;
-};
-
-const DECADE_RANGES: Record<NonNullable<Decade>, { gte: string; lte: string }> = {
-  '60s': { gte: '1960-01-01', lte: '1969-12-31' },
-  '70s': { gte: '1970-01-01', lte: '1979-12-31' },
-  '80s': { gte: '1980-01-01', lte: '1989-12-31' },
-  '90s': { gte: '1990-01-01', lte: '1999-12-31' },
-  '2000s': { gte: '2000-01-01', lte: '2009-12-31' },
-  '2010s': { gte: '2010-01-01', lte: '2019-12-31' },
-  '2020s': { gte: '2020-01-01', lte: '2030-12-31' },
 };
 
 /** Runtime bands: short <90, medium 90–150, long 150+ */
@@ -234,8 +230,13 @@ export function buildDiscoverSearchParams(params: TmdbDiscoverParams): Record<st
       !!sh.withoutKeywordsOr ||
       !!sh.withGenresAndComma ||
       !!sh.genrePrimaryHeadComma);
-  const voteGte =
-    params.voteCountGte != null ? String(params.voteCountGte) : widenDiscover ? '200' : '500';
+  const newReleasesEra = filterIncludesNewReleases(params.decade ?? []);
+  const defaultVoteGte = newReleasesEra
+    ? String(NEW_RELEASES_DISCOVER_VOTE_FLOOR)
+    : widenDiscover
+      ? '200'
+      : '500';
+  const voteGte = params.voteCountGte != null ? String(params.voteCountGte) : defaultVoteGte;
 
   const q: Record<string, string> = {
     sort_by: sortBy,
@@ -292,17 +293,10 @@ export function buildDiscoverSearchParams(params: TmdbDiscoverParams): Record<st
       q.with_genres = andExtraIds.join(',');
     }
   }
-  if (params.decade != null && params.decade.length > 0) {
-    const valid = params.decade.filter((d): d is NonNullable<Decade> => d != null);
-    if (valid.length > 0) {
-      const ranges = valid.map((d) => DECADE_RANGES[d]).filter(Boolean);
-      if (ranges.length > 0) {
-        const gte = ranges.map((r) => r.gte).sort()[0];
-        const lte = ranges.map((r) => r.lte).sort().reverse()[0];
-        q['primary_release_date.gte'] = gte;
-        q['primary_release_date.lte'] = lte;
-      }
-    }
+  const eraBounds = resolveEraDiscoverDateBounds(params.decade ?? []);
+  if (eraBounds) {
+    q['primary_release_date.gte'] = eraBounds.gte;
+    q['primary_release_date.lte'] = eraBounds.lte;
   }
   if (params.runtime != null) {
     const range = RUNTIME_RANGES[params.runtime];
@@ -346,7 +340,11 @@ export function buildDiscoverSearchParams(params: TmdbDiscoverParams): Record<st
   if (params.page != null) q.page = String(params.page);
   if (params.voteCountLte != null) q['vote_count.lte'] = String(params.voteCountLte);
   if (params.popularityLte != null) q['popularity.lte'] = String(params.popularityLte);
-  if (params.popularityGte != null) q['popularity.gte'] = String(params.popularityGte);
+  if (params.popularityGte != null) {
+    q['popularity.gte'] = String(params.popularityGte);
+  } else if (newReleasesEra) {
+    q['popularity.gte'] = String(NEW_RELEASES_DISCOVER_POPULARITY_FLOOR);
+  }
   if (params.voteAverageGte != null) q['vote_average.gte'] = String(params.voteAverageGte);
   if (params.voteAverageLte != null) q['vote_average.lte'] = String(params.voteAverageLte);
   if (sh?.withoutGenres) q.without_genres = sh.withoutGenres;
@@ -375,7 +373,8 @@ export function buildDiscoverSearchParams(params: TmdbDiscoverParams): Record<st
 
 /** Map a TMDB discover result to our Movie type. Uses defaults for fields TMDB doesn't provide. */
 export function mapTmdbToMovie(t: TmdbMovieResult): Movie {
-  const year = t.release_date ? new Date(t.release_date).getFullYear() : 0;
+  const releaseDate = t.release_date?.trim() ? t.release_date.trim() : null;
+  const year = releaseDate ? new Date(releaseDate).getFullYear() : 0;
   const genre: Genre[] = t.genre_ids
     .map((id) => GENRE_ID_TO_NAME[id])
     .filter((g): g is Genre => g != null);
@@ -383,6 +382,7 @@ export function mapTmdbToMovie(t: TmdbMovieResult): Movie {
     id: `tmdb-${t.id}`,
     title: t.title,
     year: year || 0,
+    releaseDate: releaseDate ?? undefined,
     overview: t.overview?.trim() ? t.overview.trim() : undefined,
     tagline: '',
     posterColor: 'from-slate-800 to-amber-900',

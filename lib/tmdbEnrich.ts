@@ -54,6 +54,16 @@ import {
   WORLD_CINEMA_FANOUT_LANGUAGE_CODES,
   filterMoviesForOriginalLanguageChoice,
 } from './originalLanguage';
+import {
+  applyNewReleasesDiscoverOverrides,
+  filterIncludesNewReleases,
+  NEW_RELEASES_DISCOVER_VOTE_FLOOR,
+  NEW_RELEASES_MIN_VOTE_COUNT,
+  oscarCeremonyYearsForEras,
+  passesNewReleasesCatalogGate,
+} from './era';
+import { movieHasAllSelectedGenres } from './filterMovies';
+import { RESULTS_GRID_SIZE } from './matchFinalize';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const CONCURRENCY = 6;
@@ -321,6 +331,7 @@ export interface TmdbMovieDetails {
   genre_ids?: number[];
   genres?: { id: number; name: string }[];
   imdb_id?: string | null;
+  external_ids?: { imdb_id?: string | null };
   belongs_to_collection?: { id: number; name: string } | null;
   original_language?: string | null;
   /** Present when fetching with append_to_response=keywords */
@@ -407,7 +418,7 @@ export async function fetchMovieDetails(apiKey: string, movieId: number): Promis
   try {
     return await fetchTmdb<TmdbMovieDetails>(
       apiKey,
-      `/movie/${movieId}?append_to_response=keywords,videos`
+      `/movie/${movieId}?append_to_response=keywords,videos,external_ids`
     );
   } catch {
     return null;
@@ -570,6 +581,10 @@ export async function enrichMovie(
   const revenue = details?.revenue ?? 0;
   const budget = details?.budget ?? 0;
   const year = details?.release_date ? new Date(details.release_date).getFullYear() : (base.release_date ? new Date(base.release_date).getFullYear() : 0);
+  const releaseDate =
+    details?.release_date?.trim() ||
+    base.release_date?.trim() ||
+    null;
   const popularity = details?.popularity ?? (base as unknown as { popularity?: number }).popularity ?? 0;
 
   const posterPath = details?.poster_path ?? base.poster_path ?? null;
@@ -580,6 +595,7 @@ export async function enrichMovie(
     id: `tmdb-${base.id}`,
     title: details?.title ?? base.title,
     year,
+    releaseDate: releaseDate ?? undefined,
     overview: overviewFull || undefined,
     tagline: details?.tagline?.trim() || '',
     posterColor: 'from-slate-800 to-amber-900',
@@ -622,7 +638,7 @@ export async function enrichMovie(
     directorPopularityRaw: directorPopularityRaw || undefined,
     popularity,
     voteCount,
-    imdbId: details?.imdb_id ?? undefined,
+    imdbId: details?.imdb_id ?? details?.external_ids?.imdb_id ?? undefined,
     trailerKey: extractYoutubeTrailerKey(details?.videos) ?? null,
     castCredits: castCreditsMapped,
     crewCredits: crewCreditsMapped,
@@ -1038,8 +1054,8 @@ const SLIDER_100_GENRE_BACKUP_MIN_UNIQUE = 40;
 /** If strict `with_keywords` harvest returns fewer unique rows than this, strip keywords and re-harvest (OR genres + popularity). */
 const KEYWORD_SAFETY_VALVE_MIN_UNIQUE = 40;
 
-/** After vibe filter, pad with popular same-genre titles so the client grid rarely runs empty. */
-const MIN_RANKED_BEFORE_PADDING = 40;
+/** After vibe filter, pad with popular same-genre titles so the client grid can reach {@link RESULTS_GRID_SIZE}. */
+const MIN_RANKED_BEFORE_PADDING = RESULTS_GRID_SIZE;
 
 /** Max Discover rows merged before density pre-rank (popularity + long-tail). */
 export const DISCOVER_CANDIDATE_MAX = 1000;
@@ -1059,6 +1075,16 @@ function dedupeDiscoverRows(rows: TmdbMovieResult[]): TmdbMovieResult[] {
     byId.set(movie.id, movie);
   }
   return Array.from(byId.values());
+}
+
+/** Drop same-day TMDB noise before enrich (poster, overview, minimum votes). */
+function filterNewReleasesDiscoverRows(rows: TmdbMovieResult[]): TmdbMovieResult[] {
+  return rows.filter((row) => {
+    if (!row.poster_path) return false;
+    if (!(row.overview?.trim())) return false;
+    if ((row.vote_count ?? 0) < NEW_RELEASES_MIN_VOTE_COUNT) return false;
+    return true;
+  });
 }
 
 const PASS_A_BULLSEYE_COUNT = 100;
@@ -1395,7 +1421,7 @@ function stubResult(id: number): TmdbMovieResult {
   };
 }
 
-/** When vibe filtering leaves too few rows, add popular Discover titles in the user’s genre(s) for a full grid. */
+/** When vibe filtering leaves too few rows, add Discover titles so finalize can fill the grid. */
 async function padRankedPoolIfThin(
   apiKey: string,
   filters: FilterState,
@@ -1403,55 +1429,84 @@ async function padRankedPoolIfThin(
   ranked: Movie[]
 ): Promise<Movie[]> {
   if (ranked.length >= MIN_RANKED_BEFORE_PADDING) return ranked;
-  const excluded = new Set(ranked.map((m) => parseTmdbMovieId(m.id)));
-  const padDiscover: DiscoverFetchParams = {
-    genre: filters.genre.length ? filters.genre : [],
-    decade: filters.decade,
-    runtime: filters.runtime,
-    oscarFilter: null,
-    smartHarvest: emptySmartHarvestSlice(),
-    sortBy: 'vote_average.desc',
-    voteCountGte: 500,
-    /** Padding avoids World Cinema fan-out (expensive); curated ISO passes through for parity. */
-    originalLanguage:
-      filters.originalLanguage === 'world-cinema' ? null : filters.originalLanguage ?? null,
-  };
-  if (
-    filters.originalLanguage != null &&
-    filters.originalLanguage !== 'world-cinema'
-  ) {
-    applyTieredVoteFloorsToDiscoverParams(
+
+  const mergePad = async (
+    base: Movie[],
+    padDiscover: DiscoverFetchParams
+  ): Promise<Movie[]> => {
+    const excluded = new Set(base.map((m) => parseTmdbMovieId(m.id)));
+    const padRaw = await harvestDiscoverDeepPages(
+      apiKey,
       padDiscover,
-      tierForOriginalLanguageIso(filters.originalLanguage)
+      filters,
+      filters.genre.length >= 2 ? genreJoinMode : 'and',
+      { useSeedKeywords: false, forcePassA: true }
     );
-  }
-  const padRaw = await harvestDiscoverDeepPages(
-    apiKey,
-    padDiscover,
-    filters,
-    filters.genre.length >= 2 ? genreJoinMode : 'and',
-    { useSeedKeywords: false, forcePassA: true }
-  );
-  const fresh = padRaw.filter((r) => !excluded.has(r.id));
-  if (fresh.length === 0) return ranked;
-  const padEnriched = await enrichDiscoverPool(apiKey, fresh.slice(0, DEEP_POOL_MAX));
-  const out = [...ranked];
-  for (const m of padEnriched) {
-    const id = parseTmdbMovieId(m.id);
-    if (excluded.has(id)) continue;
-    if (filters.genre.length > 0 && !m.genre.some((g) => filters.genre.includes(g))) continue;
-    excluded.add(id);
-    const tr = combinedTopRatedMatchScore(m);
-    m.matchPercentage = Math.max(28, Math.round(tr * 0.5));
-    m.finalMatchScore = tr * 0.5;
-    out.push(m);
-    if (out.length >= DEEP_POOL_MAX) break;
+    const fresh = padRaw.filter((r) => !excluded.has(r.id));
+    if (fresh.length === 0) return base;
+    let rows = fresh;
+    if (filterIncludesNewReleases(padDiscover.decade ?? [])) {
+      rows = filterNewReleasesDiscoverRows(fresh);
+    }
+    const padEnriched = await enrichDiscoverPool(apiKey, rows.slice(0, DEEP_POOL_MAX));
+    const out = [...base];
+    for (const m of padEnriched) {
+      const id = parseTmdbMovieId(m.id);
+      if (excluded.has(id)) continue;
+      if (filters.genre.length > 0 && !movieHasAllSelectedGenres(m, filters)) continue;
+      excluded.add(id);
+      const tr = combinedTopRatedMatchScore(m);
+      m.matchPercentage = Math.max(28, Math.round(tr * 0.5));
+      m.finalMatchScore = tr * 0.5;
+      out.push(m);
+      if (out.length >= DEEP_POOL_MAX) break;
+    }
+    return out;
+  };
+
+  const buildPadDiscover = (relaxNewReleases: boolean): DiscoverFetchParams => {
+    const padDiscover: DiscoverFetchParams = {
+      genre: filters.genre.length ? filters.genre : [],
+      decade: relaxNewReleases ? [] : filters.decade,
+      runtime: filters.runtime,
+      oscarFilter: null,
+      smartHarvest: emptySmartHarvestSlice(),
+      sortBy: 'vote_average.desc',
+      voteCountGte: 500,
+      originalLanguage:
+        filters.originalLanguage === 'world-cinema' ? null : filters.originalLanguage ?? null,
+    };
+    if (filterIncludesNewReleases(filters.decade) && !relaxNewReleases) {
+      Object.assign(
+        padDiscover,
+        applyNewReleasesDiscoverOverrides({
+          sortBy: 'popularity.desc',
+          voteCountGte: NEW_RELEASES_DISCOVER_VOTE_FLOOR,
+        }),
+      );
+    }
+    if (
+      filters.originalLanguage != null &&
+      filters.originalLanguage !== 'world-cinema'
+    ) {
+      applyTieredVoteFloorsToDiscoverParams(
+        padDiscover,
+        tierForOriginalLanguageIso(filters.originalLanguage),
+      );
+    }
+    return padDiscover;
+  };
+
+  let out = ranked;
+  out = await mergePad(out, buildPadDiscover(false));
+  if (out.length < MIN_RANKED_BEFORE_PADDING && filterIncludesNewReleases(filters.decade)) {
+    out = await mergePad(out, buildPadDiscover(true));
   }
   console.log('[Discover] Padded ranked pool:', ranked.length, '→', out.length);
   return out;
 }
 
-const DECADE_OSCAR_YEAR_MAP: Record<NonNullable<Decade>, { min: number; max: number }> = {
+const DECADE_OSCAR_YEAR_MAP: Record<Exclude<NonNullable<Decade>, 'new-releases'>, { min: number; max: number }> = {
   '60s':   { min: 1960, max: 1969 },
   '70s':   { min: 1970, max: 1979 },
   '80s':   { min: 1980, max: 1989 },
@@ -1470,12 +1525,8 @@ function preFilterOscarIds(ids: number[], filters: FilterState): number[] {
   const idSet = new Set(ids);
 
   if (filters.decade.length > 0) {
-    const validYears = new Set<number>();
-    for (const d of filters.decade) {
-      if (!d) continue;
-      const range = DECADE_OSCAR_YEAR_MAP[d];
-      for (let y = range.min; y <= range.max; y++) validYears.add(y);
-    }
+    const validYears = oscarCeremonyYearsForEras(filters.decade);
+    if (!validYears || validYears.size === 0) return [];
     return OSCAR_RESULTS
       .filter((e) => idSet.has(e.tmdb_id) && validYears.has(e.year))
       .map((e) => e.tmdb_id);
@@ -1687,7 +1738,7 @@ export async function getTmdbMatches(
 
   const smartHarvest = stripAnimationFromWithoutGenres({ withKeywordIds: [], withoutKeywordIds: [] });
   if (process.env.NODE_ENV === 'development') {
-    console.log('[Cinematch] Smart Harvest', smartHarvest);
+    console.log('[GoodReels] Smart Harvest', smartHarvest);
   }
 
   const activeBaselineGenres: FilterState['genre'] =
@@ -1743,9 +1794,12 @@ export async function getTmdbMatches(
    * Skips only **Fans** sort and **indie Star Power** (low vote_count.asc) paths.
    * Documentary (TMDB genre 99) uses a lower floor — many acclaimed docs have <500 TMDB votes.
    */
+  const wantsNewReleases = filterIncludesNewReleases(filters.decade);
   const isDocumentarySearch = activeBaselineGenres.includes('Documentary');
   const defaultVoteFloor = isDocumentarySearch ? 100 : 500;
-  if (!indieDiscover && !fansDiscover) {
+  if (wantsNewReleases) {
+    Object.assign(discoverBase, applyNewReleasesDiscoverOverrides(discoverBase));
+  } else if (!indieDiscover && !fansDiscover) {
     discoverBase.sortBy = 'vote_average.desc';
     discoverBase.voteCountGte = Math.max(discoverBase.voteCountGte ?? 0, defaultVoteFloor);
     delete discoverBase.voteCountLte;
@@ -1766,7 +1820,7 @@ export async function getTmdbMatches(
 
   const anchorBase: DiscoverFetchParams = {
     ...discoverBase,
-    sortBy: 'vote_count.desc',
+    sortBy: wantsNewReleases ? 'primary_release_date.desc' : 'vote_count.desc',
     genreJoinMode: activeBaselineGenres.length > 1 ? 'or' : 'and',
   };
   console.log(
@@ -1817,12 +1871,59 @@ export async function getTmdbMatches(
   // with genuinely different film profiles. A random 0-or-1 page-start offset ensures
   // repeated identical searches don't always return the exact same set.
   const baseRandOffset = Math.floor(Math.random() * 2); // 0 or 1
-  const qualBase: DiscoverFetchParams = { ...discoverBase, sortBy: 'vote_average.desc' };
-  const BASELINE_TARGET = 60; // enrichment target — we'll score and take top 40 for Claude
+  const qualBase: DiscoverFetchParams = {
+    ...discoverBase,
+    sortBy: wantsNewReleases ? 'primary_release_date.desc' : 'vote_average.desc',
+  };
+  const BASELINE_TARGET = wantsNewReleases ? 80 : 60;
 
   let allMovies: TmdbMovieResult[] = [];
 
-  if (activeBaselineGenres.length >= 2) {
+  if (wantsNewReleases) {
+    const nrBase: DiscoverFetchParams = {
+      ...discoverBase,
+      genreJoinMode: 'and',
+    };
+    const popPages = Array.from({ length: 12 }, (_, i) => i + 1);
+    const popRows = await Promise.all(
+      popPages.map((page) => fetchDiscoverRaw(apiKey, { ...nrBase, sortBy: 'popularity.desc' }, page)),
+    );
+    allMovies = filterNewReleasesDiscoverRows(
+      dedupeDiscoverRows(popRows.flatMap((d) => d.results ?? [])),
+    );
+    const engagementPages = [1, 2, 3, 4, 5];
+    const engRows = await Promise.all(
+      engagementPages.map((page) =>
+        fetchDiscoverRaw(apiKey, { ...nrBase, sortBy: 'vote_count.desc' }, page),
+      ),
+    );
+    allMovies = filterNewReleasesDiscoverRows(
+      dedupeDiscoverRows([...allMovies, ...engRows.flatMap((d) => d.results ?? [])]),
+    );
+    if (allMovies.length < BASELINE_TARGET) {
+      const datePages = [1, 2, 3, 4, 5];
+      const dateRows = await Promise.all(
+        datePages.map((page) =>
+          fetchDiscoverRaw(apiKey, { ...nrBase, sortBy: 'primary_release_date.desc' }, page),
+        ),
+      );
+      allMovies = filterNewReleasesDiscoverRows(
+        dedupeDiscoverRows([...allMovies, ...dateRows.flatMap((d) => d.results ?? [])]),
+      );
+    }
+    let nextPage = 13;
+    while (allMovies.length < BASELINE_TARGET && nextPage <= 30) {
+      const extra = await fetchDiscoverRaw(
+        apiKey,
+        { ...nrBase, sortBy: 'popularity.desc' },
+        nextPage,
+      );
+      allMovies = filterNewReleasesDiscoverRows(
+        dedupeDiscoverRows([...allMovies, ...(extra.results ?? [])]),
+      );
+      nextPage += 1;
+    }
+  } else if (activeBaselineGenres.length >= 2) {
     // Multi-genre: AND intersection pages + quality sort pass.
     const andBase: DiscoverFetchParams = { ...anchorBase, genre: activeBaselineGenres, genreJoinMode: 'and' };
     const andQualBase: DiscoverFetchParams = { ...qualBase, genre: activeBaselineGenres, genreJoinMode: 'and' };
@@ -1887,7 +1988,16 @@ export async function getTmdbMatches(
   });
 
   // Enrich full baseline pool; vibe only affects local rank, never deletion.
-  const enrichedPool = await enrichDiscoverPool(apiKey, allMovies);
+  let enrichedPool = await enrichDiscoverPool(apiKey, allMovies);
+  if (wantsNewReleases) {
+    enrichedPool = enrichedPool.filter((m) =>
+      passesNewReleasesCatalogGate({
+        posterPath: m.posterPath,
+        overview: m.overview,
+        voteCount: m.voteCount,
+      }),
+    );
+  }
 
   const hasMissingCore = (m: Movie): boolean => {
     const missingPoster = !m.posterPath;
@@ -1920,11 +2030,15 @@ export async function getTmdbMatches(
     const pedigreeBoost = calculatePedigreeScore(movie, filters);
     const qualityBuffer = (movie.rating ?? 0) * 5;
     const missingDataPenalty = hasMissingCore(movie) ? 1000 : 0;
+    const newReleasesVisibilityBoost = wantsNewReleases
+      ? Math.min(600, Math.log1p(movie.popularity ?? 0) * 90 + Math.log1p(movie.voteCount ?? 0) * 25)
+      : 0;
     const totalScore =
       qualityBuffer +
       pacingBoost +
       primaryGenreMatchBoost +
       pedigreeBoost +
+      newReleasesVisibilityBoost +
       baseScore.finalVibeScore * 0.2 -
       missingDataPenalty;
     return {
@@ -1949,13 +2063,20 @@ export async function getTmdbMatches(
   );
   console.log('Total Pool Size:', scored.length);
   const selectedGenreIds = activeBaselineGenres.map(g => GENRE_NAME_TO_ID[g]).filter((id): id is number => id != null);
-  const finalScored = scored.filter(s => {
-    if (selectedGenreIds.length === 0) return true;
-    const movieGenreIds = s.movie.genreIds ?? [];
-    // Require ALL selected genres to be present (AND logic) so multi-genre searches
-    // don't surface films that only match one of the selected genres.
-    return selectedGenreIds.every(id => movieGenreIds.includes(id));
-  }).sort((a, b) => b.totalScore - a.totalScore).slice(0, DEEP_POOL_MAX);
+  const finalScored = scored
+    .filter((s) =>
+      selectedGenreIds.length === 0 ? true : movieHasAllSelectedGenres(s.movie, filters),
+    )
+    .sort((a, b) => {
+      if (wantsNewReleases) {
+        const popDiff = (b.movie.popularity ?? 0) - (a.movie.popularity ?? 0);
+        if (Math.abs(popDiff) > 0.25) return popDiff;
+        const voteDiff = (b.movie.voteCount ?? 0) - (a.movie.voteCount ?? 0);
+        if (voteDiff !== 0) return voteDiff;
+      }
+      return b.totalScore - a.totalScore;
+    })
+    .slice(0, DEEP_POOL_MAX);
 
   console.log('[Discover] Vibe resort (manifest weights)', {
     ranked: enrichedPool.length,
@@ -1976,6 +2097,10 @@ export async function getTmdbMatches(
   }
   const diversePool = applyFranchiseDiversityCap(pool);
   const animationCapPool = applyAnimationCap(diversePool, 5, activeBaselineGenres);
+  const gridPool =
+    animationCapPool.length < RESULTS_GRID_SIZE
+      ? await padRankedPoolIfThin(apiKey, filters, genreJoinMode, animationCapPool)
+      : animationCapPool;
   const hasActiveVibe = AXES.some((axis) => filters[axis] != null) || activeBaselineGenres.length >= 2 || filters.aListCast != null || filters.directorProminence != null || filters.oscarFilter != null || filters.criticsVsFans != null;
 
   // Claude receives exactly 60 candidates: top 40 scored baseline + up to 20 axis supplements.
@@ -1983,7 +2108,7 @@ export async function getTmdbMatches(
   // different films — changing Low ↔ High on any axis shifts ~20 of the 60 candidates.
   const BASELINE_CLAUDE_CAP = 40;
   const SUPPLEMENT_CLAUDE_CAP = 20;
-  const baselineForClaude = animationCapPool.slice(0, BASELINE_CLAUDE_CAP);
+  const baselineForClaude = gridPool.slice(0, BASELINE_CLAUDE_CAP);
 
   const supplements = hasActiveVibe
     ? await fetchAxisSupplements(apiKey, filters, discoverBase, baselineForClaude)
@@ -1992,11 +2117,16 @@ export async function getTmdbMatches(
     ? [...baselineForClaude, ...supplements.slice(0, SUPPLEMENT_CLAUDE_CAP)]
     : baselineForClaude;
 
-  const rerankResults = hasActiveVibe ? await claudeRerank(poolForRerank, filters, apiKey) : baselineForClaude.slice(0, 36);
+  const rerankResults = hasActiveVibe
+    ? await claudeRerank(poolForRerank, filters, apiKey)
+    : (wantsNewReleases ? gridPool : baselineForClaude).slice(0, RESULTS_GRID_SIZE);
   const finalResults = await patchBackfillDetails(apiKey, rerankResults);
   console.log('Total Movies Returned (deep-review vibe pool):', finalResults.length);
-  const langFiltered = filterMoviesForOriginalLanguageChoice(finalResults, filters.originalLanguage);
-  return finalizeMatchPresentation(langFiltered, filters);
+  let presentationPool = finalResults;
+  if (presentationPool.length < RESULTS_GRID_SIZE) {
+    presentationPool = await padRankedPoolIfThin(apiKey, filters, genreJoinMode, presentationPool);
+  }
+  return finalizeMatchPresentation(presentationPool, filters);
 }
 
 /**

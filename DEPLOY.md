@@ -1,6 +1,6 @@
-# Deploy Cinematch to Vercel (GitHub + Vercel)
+# Deploy GoodReels to Vercel (GitHub + Vercel)
 
-Follow these steps to get Cinematch live. You only need **GitHub** and **Vercel**; the app uses **TMDB** for data (no Supabase yet—you can add it later for auth or saved lists).
+Follow these steps to get GoodReels live at **https://goodreels.app**. You only need **GitHub** and **Vercel**; the app uses **TMDB** for data (no Supabase yet—you can add it later for auth or saved lists).
 
 **If you created a GitHub repo but haven’t pushed your code yet,** see **[PUSH_TO_GITHUB.md](./PUSH_TO_GITHUB.md)** first, then come back here for Vercel.
 
@@ -48,7 +48,7 @@ git push origin main
    Get one at [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api) if needed.
 5. Click **Deploy**. Vercel will build and host the app.
 
-When it finishes, you’ll get a URL like `cinematch-xxx.vercel.app`. Every push to `main` will trigger a new deployment.
+When it finishes, you’ll get a URL like `goodreels-xxx.vercel.app`. Add your custom domain **goodreels.app** in Vercel → Project → Settings → Domains. Every push to `main` will trigger a new deployment.
 
 ---
 

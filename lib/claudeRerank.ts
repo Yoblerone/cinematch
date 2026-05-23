@@ -1,27 +1,25 @@
 import type { FilterState, Movie, Decade } from './types';
 import type { TmdbMovieResult } from './tmdb';
 import { mapTmdbToMovie, GENRE_NAME_TO_ID } from './tmdb';
+import { HISTORICAL_ERA_YEAR_RANGES, NEW_RELEASES_WINDOW_DAYS } from './era';
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const TMDB_SEARCH = 'https://api.themoviedb.org/3/search/movie';
 
-const DECADE_YEAR_RANGES: Record<NonNullable<Decade>, { start: number; end: number }> = {
-  '60s': { start: 1960, end: 1969 },
-  '70s': { start: 1970, end: 1979 },
-  '80s': { start: 1980, end: 1989 },
-  '90s': { start: 1990, end: 1999 },
-  '2000s': { start: 2000, end: 2009 },
-  '2010s': { start: 2010, end: 2019 },
-  '2020s': { start: 2020, end: 2029 },
-};
-
 function buildDecadeConstraint(decades: FilterState['decade']): string {
   const valid = (decades ?? []).filter((d): d is NonNullable<Decade> => d != null);
   if (valid.length === 0) return '';
-  const ranges = valid.map((d) => DECADE_YEAR_RANGES[d]);
-  const minYear = Math.min(...ranges.map((r) => r.start));
-  const maxYear = Math.max(...ranges.map((r) => r.end));
-  return ` Only include films released between ${minYear} and ${maxYear} — do not suggest films from outside this date range.`;
+
+  const parts: string[] = [];
+  for (const era of valid) {
+    if (era === 'new-releases') {
+      parts.push(`released within the last ${NEW_RELEASES_WINDOW_DAYS} days`);
+    } else {
+      const [start, end] = HISTORICAL_ERA_YEAR_RANGES[era];
+      parts.push(`released between ${start} and ${end}`);
+    }
+  }
+  return ` Only include films ${parts.join(' OR ')} — do not suggest films outside these date ranges.`;
 }
 
 function buildVibeDescriptionClause(filters: FilterState): string {

@@ -8,6 +8,7 @@ import { parseTmdbMovieId } from '@/lib/tmdb';
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p';
 const IMDB_TITLE_BASE = 'https://www.imdb.com/title';
+const TMDB_MOVIE_BASE = 'https://www.themoviedb.org/movie';
 
 interface MovieCardProps {
   movie: Movie;
@@ -244,6 +245,17 @@ export default function MovieCard({ movie, index, variant = 'compact', matchPerc
                 >
                   <ExternalLink className={linkIconClass} aria-hidden />
                   IMDB
+                </a>
+              ) : tmdbUrl ? (
+                <a
+                  href={tmdbUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`${linkTextBase} ${isFeatured ? 'text-sm' : 'text-xs'}`}
+                  title="View on TMDB"
+                >
+                  <ExternalLink className={linkIconClass} aria-hidden />
+                  TMDB
                 </a>
               ) : null}
               {showStreamingUi ? (

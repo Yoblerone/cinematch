@@ -19,6 +19,7 @@ import {
   logThematicDensityTopFive,
 } from './scoring/thematicDensity';
 import { applyPacingElasticRerank } from './scoring/pacingElastic';
+import { eraSelectionIsOnlyNewReleases, movieMatchesEra } from './era';
 
 /** Critics/fans applied last on a 0–100 normalized scale (metadata order: genre → penalties → bonuses → CF). */
 const CRITICS_FANS_WEIGHT = 0.42;
@@ -70,22 +71,12 @@ function isCultClassicByNumbers(m: { budget: number; boxOffice: number; year: nu
   );
 }
 
-const DECADE_RANGES: Record<string, [number, number]> = {
-  '60s': [1960, 1969], '70s': [1970, 1979], '80s': [1980, 1989], '90s': [1990, 1999],
-  '2000s': [2000, 2009], '2010s': [2010, 2019], '2020s': [2020, 2030],
-};
-
 function inBand(movieVal: number, filterVal: number): boolean {
   return movieVal >= filterVal - BAND && movieVal <= filterVal + BAND;
 }
 
-function decadeMatch(movieYear: number, decades: FilterState['decade']): boolean {
-  const valid = decades.filter((d): d is NonNullable<typeof d> => d != null);
-  if (valid.length === 0) return true;
-  return valid.some((d) => {
-    const range = DECADE_RANGES[d];
-    return range && movieYear >= range[0] && movieYear <= range[1];
-  });
+function eraMatch(movie: Movie, eras: FilterState['decade']): boolean {
+  return movieMatchesEra(movie, eras);
 }
 
 function runtimeMatch(runtimeMinutes: number, runtime: FilterState['runtime']): boolean {
@@ -148,7 +139,7 @@ export function scoreMovieTasteNonVibe(movie: Movie, filters: FilterState): numb
   if (filters.oscarFilter === 'winner') {
     if (movie.oscarWinner) score += 500;
   }
-  if (filters.decade.length > 0 && decadeMatch(movie.year, filters.decade)) score += 1;
+  if (filters.decade.length > 0 && eraMatch(movie, filters.decade)) score += 1;
   if (filters.runtime != null && runtimeMatch(movie.runtimeMinutes, filters.runtime)) score += 1;
   return score;
 }
@@ -208,7 +199,13 @@ export function filterMovies(
         if (!filters.genre.some((g) => movie.genre.includes(g))) return false;
       } else if (!filters.genre.every((g) => movie.genre.includes(g))) return false;
     }
-    if (filters.decade.length > 0 && !decadeMatch(movie.year, filters.decade)) return false;
+    if (
+      filters.decade.length > 0 &&
+      !eraSelectionIsOnlyNewReleases(filters.decade) &&
+      !eraMatch(movie, filters.decade)
+    ) {
+      return false;
+    }
     if (filters.runtime != null && !runtimeMatch(movie.runtimeMinutes, filters.runtime)) return false;
     return true;
   });
@@ -306,7 +303,7 @@ export function filterMovies(
   if (process.env.NODE_ENV === 'development' && rankedFiltered.length > 0) {
     const first = rankedFiltered[0]!.movie;
     const kw = first.keywordNames ?? [];
-    console.log(`[Cinematch] #1 result keywords (${first.title})`, {
+    console.log(`[GoodReels] #1 result keywords (${first.title})`, {
       count: kw.length,
       keywords: kw,
       hint:
@@ -331,7 +328,7 @@ export function filterMovies(
       };
     });
     console.log(
-      '[Cinematch] Top 5 match breakdown (genre → main plot → metadata → CF):',
+      '[GoodReels] Top 5 match breakdown (genre → main plot → metadata → CF):',
       JSON.stringify(payload, null, 2)
     );
 
@@ -344,7 +341,7 @@ export function filterMovies(
         const matchedAnt = listMatchedPhrases(kn, romanceAnt);
         const energy = calculateEnergyScore(top, filters);
         const romAxis = energy.axes.find((a) => a.axis === 'romance');
-        console.log('[Cinematch] Romance>85 #1 main-plot audit', {
+        console.log('[GoodReels] Romance>85 #1 main-plot audit', {
           title: top.title,
           keywordCount: top.keywordNames?.length ?? 0,
           keywords: top.keywordNames ?? [],
@@ -361,7 +358,7 @@ export function filterMovies(
         const matchedAnt = listMatchedPhrases(kn, romanceAnt);
         const energy = calculateEnergyScore(m, filters);
         const romAxis = energy.axes.find((a) => a.axis === 'romance');
-        console.warn('[Cinematch] Dunkirk still in ranked list (Romance>85) — conflict audit', {
+        console.warn('[GoodReels] Dunkirk still in ranked list (Romance>85) — conflict audit', {
           rankApprox: rankedFiltered.indexOf(dunkirkEntry) + 1,
           title: m.title,
           keywords: m.keywordNames ?? [],
