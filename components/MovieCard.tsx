@@ -92,6 +92,7 @@ export default function MovieCard({ movie, index, variant = 'compact', matchPerc
     : null;
 
   const tmdbNumericId = parseTmdbMovieId(movie.id);
+  const tmdbUrl = tmdbNumericId > 0 ? `${TMDB_MOVIE_BASE}/${tmdbNumericId}` : null;
   const showStreamingUi = tmdbNumericId > 0;
 
   const linkTextBase =
