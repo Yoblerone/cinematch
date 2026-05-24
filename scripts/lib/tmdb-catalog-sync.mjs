@@ -23,9 +23,10 @@ export const EXISTING_PAGE_SIZE = 1_000;
 /** Align with lib/era.ts NEW_RELEASES_WINDOW_DAYS */
 export const NEW_RELEASES_WINDOW_DAYS = 180;
 
+/** Load `.env.local` when present (local dev). CI passes secrets via `process.env` — no file needed. */
 export function loadEnv() {
   const envPath = join(ROOT, '.env.local');
-  if (!existsSync(envPath)) throw new Error('.env.local not found at ' + envPath);
+  if (!existsSync(envPath)) return;
   for (const line of readFileSync(envPath, 'utf8').split('\n')) {
     const t = line.trim();
     if (!t || t.startsWith('#')) continue;
