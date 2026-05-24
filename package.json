@@ -8,7 +8,9 @@
     "start": "next start",
     "safe-start": "rm -rf .next && npm run build && npm run start",
     "lint": "next lint",
-    "fetch-best-picture-posters": "node scripts/fetch-best-picture-posters.mjs"
+    "fetch-best-picture-posters": "node scripts/fetch-best-picture-posters.mjs",
+    "seed-tmdb-catalog": "node scripts/seed-tmdb-catalog.mjs",
+    "sync-tmdb-catalog": "node scripts/daily-sync-tmdb-catalog.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.1",

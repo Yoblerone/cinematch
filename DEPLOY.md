@@ -67,6 +67,22 @@ The app does **not** use Supabase yet. When you’re ready you can use it for:
 
 You’d add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` (and optionally `SUPABASE_SERVICE_ROLE_KEY`) in Vercel **Environment Variables** and in `.env.local` for local dev.
 
+### TMDB catalog sync (Supabase `movies` table)
+
+One-time bulk seed:
+
+```bash
+npm run seed-tmdb-catalog
+```
+
+Daily incremental sync (new export IDs + refresh recent releases):
+
+```bash
+npm run sync-tmdb-catalog
+```
+
+GitHub Actions runs this automatically (`.github/workflows/daily-tmdb-sync.yml`, 09:15 UTC). Add repo secrets: `TMDB_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
+
 ---
 
 ## Checklist

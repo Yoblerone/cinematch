@@ -1,0 +1,33 @@
+# Daily TMDB → Supabase catalog sync (new releases + stale recent titles).
+# TMDB publishes movie_ids export ~08:00 UTC; this runs after that window.
+name: Daily TMDB catalog sync
+
+on:
+  schedule:
+    - cron: '15 9 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: tmdb-catalog-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run daily sync
+        env:
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npm run sync-tmdb-catalog
