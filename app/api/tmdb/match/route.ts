@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { FilterState } from '@/lib/types';
 import { defaultFilters } from '@/lib/types';
-import { getTmdbMatches } from '@/lib/tmdbEnrich';
+import { getHybridMatches } from '@/lib/getHybridMatches';
 import { normalizeOriginalLanguageFilterInput } from '@/lib/originalLanguage';
-/** Thematic density V2: `getTmdbMatches` → `filterMovies` + `lib/scoring/energyManifest.ts` + `lib/scoring/thematicDensity.ts` (no `fetchMovies.ts` in this app). */
+/** Hybrid match: Supabase catalog first, TMDB fallback when thin. */
 
 export async function POST(request: NextRequest) {
   let filters: FilterState;
@@ -84,16 +84,26 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const apiKey = process.env.TMDB_API_KEY;
-  if (!apiKey) {
+  const apiKey = process.env.TMDB_API_KEY ?? '';
+  const matchSource = (process.env.MATCH_SOURCE ?? 'supabase').toLowerCase();
+  if (matchSource === 'tmdb' && !apiKey) {
     return NextResponse.json(
       { error: 'TMDB_API_KEY is not set. Add it to .env.local (see .env.example).' },
       { status: 503 }
     );
   }
+  if (matchSource !== 'tmdb' && !process.env.SUPABASE_URL?.trim()) {
+    return NextResponse.json(
+      {
+        error:
+          'Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (catalog match).',
+      },
+      { status: 503 }
+    );
+  }
 
   try {
-    const { movies, disclaimer } = await getTmdbMatches(apiKey, filters, { discoverStartPage });
+    const { movies, disclaimer } = await getHybridMatches(apiKey, filters, { discoverStartPage });
     return NextResponse.json({ movies, disclaimer });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);

@@ -1,3 +1,5 @@
+import type { WatchProvidersPayload } from './watchProviders';
+
 export type CrowdType = 'Solo' | 'Date Night' | 'Group';
 
 /** 18 Visual Moods (TMDB keyword–driven ranking). */
@@ -181,6 +183,8 @@ export interface Movie {
   claudeSuggested?: boolean;
   /** TMDB belongs_to_collection.id — used for franchise diversity dedup. */
   collectionId?: number | null;
+  /** US streaming availability from catalog (TMDB watch/providers at seed time). */
+  watchProvidersUs?: WatchProvidersPayload | null;
 }
 
 /** Max genres user can select (TMDB discover uses AND for multiple). */

@@ -5,6 +5,7 @@ import { Star, ExternalLink, Play, ChevronDown } from 'lucide-react';
 import { useState } from 'react';
 import type { Movie } from '@/lib/types';
 import { parseTmdbMovieId } from '@/lib/tmdb';
+import type { WatchProvidersPayload } from '@/lib/watchProviders';
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p';
 const IMDB_TITLE_BASE = 'https://www.imdb.com/title';
@@ -18,21 +19,7 @@ interface MovieCardProps {
   matchPercent?: number;
 }
 
-type WatchProviderApi = {
-  provider_id: number;
-  provider_name: string;
-  logo_path?: string | null;
-};
-
-type WatchProvidersPayload = {
-  region: string;
-  link: string | null;
-  flatrate: WatchProviderApi[];
-  rent: WatchProviderApi[];
-  buy: WatchProviderApi[];
-};
-
-function providerNamesUnique(rows: WatchProviderApi[]): string[] {
+function providerNamesUnique(rows: WatchProvidersPayload['flatrate']): string[] {
   const seen = new Set<number>();
   const out: string[] = [];
   for (const r of rows) {
@@ -99,8 +86,11 @@ export default function MovieCard({ movie, index, variant = 'compact', matchPerc
     'inline-flex items-center gap-1 text-brass hover:text-neon-gold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brass/70 rounded-sm';
   const linkIconClass = isFeatured ? 'w-3.5 h-3.5' : 'w-3 h-3';
 
+  const catalogStreaming = movie.watchProvidersUs ?? null;
   const [streamingOpen, setStreamingOpen] = useState(false);
-  const [providersPayload, setProvidersPayload] = useState<WatchProvidersPayload | null>(null);
+  const [providersPayload, setProvidersPayload] = useState<WatchProvidersPayload | null>(
+    catalogStreaming
+  );
   const [providersLoading, setProvidersLoading] = useState(false);
   const [providersError, setProvidersError] = useState<string | null>(null);
 
@@ -111,6 +101,12 @@ export default function MovieCard({ movie, index, variant = 'compact', matchPerc
     }
     setStreamingOpen(true);
     if (providersPayload !== null || providersLoading) return;
+
+    if (catalogStreaming) {
+      setProvidersPayload(catalogStreaming);
+      return;
+    }
+
     setProvidersLoading(true);
     setProvidersError(null);
     try {
