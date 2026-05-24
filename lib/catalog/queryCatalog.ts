@@ -9,6 +9,12 @@ import {
 import type { CatalogMovieRow } from './catalogRow';
 
 const CATALOG_POOL_LIMIT = 800;
+const BROAD_POOL_TRIGGER = 120;
+
+export type CatalogQueryOptions = {
+  /** `and` = every selected genre required (strict). `or` = any selected genre (relaxed top-up). */
+  genreJoinMode?: 'and' | 'or';
+};
 
 function runtimeBounds(runtime: FilterState['runtime']): { gte?: number; lte?: number } {
   if (runtime === 'short') return { lte: 89 };
@@ -62,11 +68,21 @@ export async function queryCatalogByTmdbIds(
   return rows;
 }
 
-/** Primary catalog candidate pool for match (fast SQL filters + client genre AND). */
+function dedupeRows(rows: CatalogMovieRow[]): CatalogMovieRow[] {
+  const byId = new Map<number, CatalogMovieRow>();
+  for (const row of rows) {
+    byId.set(row.tmdb_id, row);
+  }
+  return Array.from(byId.values());
+}
+
+/** Primary catalog candidate pool for match (fast SQL filters + optional genre AND). */
 export async function queryCatalogCandidates(
   supabase: SupabaseClient,
-  filters: FilterState
+  filters: FilterState,
+  options?: CatalogQueryOptions
 ): Promise<CatalogMovieRow[]> {
+  const genreJoinMode = options?.genreJoinMode ?? (filters.genre.length > 1 ? 'and' : 'and');
   const { voteCountGte, voteAverageGte } = voteFloors(filters);
   const runtime = runtimeBounds(filters.runtime);
   const eraBounds = resolveEraDiscoverDateBounds(filters.decade);
@@ -107,7 +123,7 @@ export async function queryCatalogCandidates(
 
   let rows = (data ?? []) as CatalogMovieRow[];
 
-  if (genreIds.length > 1) {
+  if (genreJoinMode === 'and' && genreIds.length > 1) {
     rows = rows.filter((row) => {
       const ids = row.genre_ids ?? [];
       return genreIds.every((gid) => ids.includes(gid));
@@ -125,4 +141,47 @@ export async function queryCatalogCandidates(
   }
 
   return rows;
+}
+
+/**
+ * Strict SQL pool first; if thin (common with multi-genre AND), merge a genre-OR broadened pass
+ * so finalize can show strict matches + oops card + next-best fill to 36.
+ */
+export async function fetchCatalogPool(
+  supabase: SupabaseClient,
+  filters: FilterState
+): Promise<CatalogMovieRow[]> {
+  const strict = await queryCatalogCandidates(supabase, filters, { genreJoinMode: 'and' });
+  let combined = strict;
+
+  if (filters.genre.length > 1 && strict.length < BROAD_POOL_TRIGGER) {
+    const broad = await queryCatalogCandidates(supabase, filters, { genreJoinMode: 'or' });
+    combined = dedupeRows([...strict, ...broad]);
+  }
+
+  if (combined.length < BROAD_POOL_TRIGGER) {
+    const eraOnly: FilterState = {
+      ...filters,
+      genre: [],
+      narrative_pacing: null,
+      emotional_tone: null,
+      brain_power: null,
+      visual_style: null,
+      suspense_level: null,
+      world_style: null,
+      pacing: null,
+      cryMeter: null,
+      humor: null,
+      romance: null,
+      suspense: null,
+      intensity: null,
+      aListCast: null,
+      directorProminence: null,
+      criticsVsFans: null,
+    };
+    const eraTopUp = await queryCatalogCandidates(supabase, eraOnly, { genreJoinMode: 'or' });
+    combined = dedupeRows([...combined, ...eraTopUp]);
+  }
+
+  return combined;
 }

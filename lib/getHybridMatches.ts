@@ -1,10 +1,10 @@
 import type { FilterState, TmdbMatchResponse } from './types';
 import { getSupabaseAdmin } from './supabaseServer';
 import { getTmdbMatches } from './tmdbEnrich';
-import { finalizeMatchPresentation } from './matchFinalize';
+import { finalizeMatchPresentation, moviePassesStrictGrid } from './matchFinalize';
 import { mapCatalogRowToMovie } from './catalog/mapCatalogRow';
-import { queryCatalogByTmdbIds, queryCatalogCandidates } from './catalog/queryCatalog';
-import { rankCatalogPool } from './catalog/rankCatalogPool';
+import { fetchCatalogPool, queryCatalogByTmdbIds } from './catalog/queryCatalog';
+import { buildCatalogPresentationPool } from './catalog/rankCatalogPool';
 import {
   getOscarBothIds,
   getOscarNomineeIds,
@@ -30,18 +30,20 @@ async function getCatalogMatches(filters: FilterState): Promise<TmdbMatchRespons
   } else if (oscar === 'both') {
     rows = await queryCatalogByTmdbIds(supabase, getOscarBothIds());
   } else {
-    rows = await queryCatalogCandidates(supabase, filters);
+    rows = await fetchCatalogPool(supabase, filters);
   }
 
   const movies = rows.map(mapCatalogRowToMovie);
-  const ranked = rankCatalogPool(movies, filters);
+  const presentationPool = buildCatalogPresentationPool(movies, filters);
+  const strictInPool = presentationPool.filter((m) => moviePassesStrictGrid(m, filters)).length;
 
   console.log('[match] catalog', {
     catalogRowCount: rows.length,
-    rankedCount: ranked.length,
+    presentationPool: presentationPool.length,
+    strictInPool,
   });
 
-  return finalizeMatchPresentation(ranked, filters);
+  return finalizeMatchPresentation(presentationPool, filters);
 }
 
 /**

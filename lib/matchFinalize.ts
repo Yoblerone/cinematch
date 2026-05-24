@@ -69,7 +69,7 @@ export function movieIsOutsideNewReleasesWindow(movie: Movie): boolean {
 }
 
 /** Count of active hard dimensions the movie satisfies (for next-best ordering). */
-function hardMatchCount(movie: Movie, filters: FilterState): number {
+export function hardMatchCount(movie: Movie, filters: FilterState): number {
   let n = 0;
   if (filters.crowd == null || movie.crowd.includes(filters.crowd)) n++;
   if (filters.genre.length === 0 || movieHasAllSelectedGenres(movie, filters)) n++;
@@ -135,8 +135,11 @@ function resolveDisclaimerInsertAt(merged: Movie[], filters: FilterState): numbe
   }
 
   const strictCount = merged.filter((m) => moviePassesStrictGrid(m, filters)).length;
-  if (strictCount < RESULTS_GRID_SIZE && strictCount < merged.length) {
-    return strictCount;
+  if (strictCount < RESULTS_GRID_SIZE) {
+    // Oops after the strict block when we have relaxed rows, or when the grid could not fill to 36.
+    if (strictCount < merged.length || merged.length < RESULTS_GRID_SIZE) {
+      return strictCount;
+    }
   }
   return null;
 }

@@ -1,15 +1,14 @@
 import type { FilterState, Movie } from '@/lib/types';
-import { filterMovies } from '@/lib/filterMovies';
 import { combinedTopRatedMatchScore } from '@/lib/criticsFansRank';
 import { scoreMovieDeclarative } from '@/lib/scoring/thematicEngine';
 import { GENRE_NAME_TO_ID } from '@/lib/tmdb';
-import { movieHasAllSelectedGenres } from '@/lib/filterMovies';
 import { prestigeDirectorMatch } from '@/lib/prestigeScore';
 import { PROMINENCE_TRUTH_LIST } from '@/lib/prominence';
 import { isOscarListedId, isOscarNomineeId, isOscarWinnerId } from '@/lib/data/oscar-truth';
 import { parseTmdbMovieId } from '@/lib/tmdb';
+import { hardMatchCount, moviePassesStrictGrid } from '@/lib/matchFinalize';
 
-const DEEP_POOL_MAX = 120;
+const PRESENTATION_POOL_MAX = 240;
 
 function calculatePedigreeBoost(movie: Movie, filters: FilterState): number {
   let score = 0;
@@ -31,12 +30,14 @@ function calculatePedigreeBoost(movie: Movie, filters: FilterState): number {
   return score;
 }
 
-/** Score, trim, and attach match % — mirrors core of TMDB deep pool ranking. */
-export function rankCatalogPool(movies: Movie[], filters: FilterState): Movie[] {
-  const filtered = filterMovies(movies, filters, { skipMaxSliderVibeTrim: true });
+/**
+ * Score full catalog pool without hard-deleting rows — `finalizeMatchPresentation` splits
+ * strict vs next-best and inserts the oops card when strict &lt; 36.
+ */
+export function buildCatalogPresentationPool(movies: Movie[], filters: FilterState): Movie[] {
   const activeGenres = filters.genre;
 
-  const scored = filtered.map((movie) => {
+  const scored = movies.map((movie, rank) => {
     const baseScore = scoreMovieDeclarative(movie, filters);
     const selectedGenreIds = activeGenres
       .map((g) => GENRE_NAME_TO_ID[g])
@@ -55,22 +56,26 @@ export function rankCatalogPool(movies: Movie[], filters: FilterState): Movie[] 
     const totalScore =
       qualityBuffer + primaryGenreMatchBoost + pedigreeBoost + baseScore.finalVibeScore * 0.2;
 
-    return { movie, totalScore, baseScore };
+    return {
+      movie,
+      rank,
+      totalScore,
+      strict: moviePassesStrictGrid(movie, filters),
+      matchCount: hardMatchCount(movie, filters),
+    };
   });
 
-  scored.sort((a, b) => b.totalScore - a.totalScore);
+  scored.sort((a, b) => {
+    if (a.strict !== b.strict) return a.strict ? -1 : 1;
+    if (b.matchCount !== a.matchCount) return b.matchCount - a.matchCount;
+    if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
+    return a.rank - b.rank;
+  });
 
-  const top = scored
-    .filter((s) =>
-      activeGenres.length === 0 ? true : movieHasAllSelectedGenres(s.movie, filters)
-    )
-    .slice(0, DEEP_POOL_MAX);
-
-  return top.map((s, i) => {
+  return scored.slice(0, PRESENTATION_POOL_MAX).map((s) => {
     const m = s.movie;
     m.finalMatchScore = s.totalScore;
     m.matchPercentage = Math.max(0, Math.min(100, Math.round(s.totalScore / 8)));
-    m.vibeDensityScore = s.baseScore.baseVibeScore;
     return m;
   });
 }

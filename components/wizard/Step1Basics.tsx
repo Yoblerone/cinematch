@@ -149,6 +149,7 @@ export default function Step1Basics({
           <div className="flex items-center gap-2 text-brass-light mb-3">
             <Globe className="w-5 h-5" />
             <span className="font-medium">Language</span>
+            <span className="text-cream text-xs">(English by default)</span>
           </div>
           <div className="flex flex-wrap gap-2">
             {CURATED_ORIGINAL_LANGUAGE_OPTIONS.map(({ code, label }) => (
