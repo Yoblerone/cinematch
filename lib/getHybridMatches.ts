@@ -4,7 +4,10 @@ import { getTmdbMatches } from './tmdbEnrich';
 import { finalizeMatchPresentation, moviePassesStrictGrid } from './matchFinalize';
 import { mapCatalogRowToMovie } from './catalog/mapCatalogRow';
 import { fetchCatalogPool, queryCatalogByTmdbIds } from './catalog/queryCatalog';
+import { catalogPoolOffset } from './catalog/manifestProbe';
 import { buildCatalogPresentationPool } from './catalog/rankCatalogPool';
+import { applyPacingElasticRerank } from './scoring/pacingElastic';
+import { applyFranchiseDiversityCap } from './catalog/diversity';
 import {
   getOscarBothIds,
   getOscarNomineeIds,
@@ -35,15 +38,18 @@ async function getCatalogMatches(filters: FilterState): Promise<TmdbMatchRespons
 
   const movies = rows.map(mapCatalogRowToMovie);
   const presentationPool = buildCatalogPresentationPool(movies, filters);
-  const strictInPool = presentationPool.filter((m) => moviePassesStrictGrid(m, filters)).length;
+  const paced = applyPacingElasticRerank(presentationPool, filters);
+  const diverse = applyFranchiseDiversityCap(paced);
+  const strictInPool = diverse.filter((m) => moviePassesStrictGrid(m, filters)).length;
 
   console.log('[match] catalog', {
     catalogRowCount: rows.length,
-    presentationPool: presentationPool.length,
+    presentationPool: diverse.length,
     strictInPool,
+    poolOffset: catalogPoolOffset(filters),
   });
 
-  return finalizeMatchPresentation(presentationPool, filters);
+  return finalizeMatchPresentation(diverse, filters);
 }
 
 /**

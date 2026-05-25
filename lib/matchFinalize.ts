@@ -177,6 +177,9 @@ export function finalizeMatchPresentation(
       return a.outsideNewReleases ? 1 : -1;
     }
     if (b.matchCount !== a.matchCount) return b.matchCount - a.matchCount;
+    const scoreA = a.movie.finalMatchScore ?? 0;
+    const scoreB = b.movie.finalMatchScore ?? 0;
+    if (scoreB !== scoreA) return scoreB - scoreA;
     return a.rank - b.rank;
   });
 

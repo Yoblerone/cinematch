@@ -7,13 +7,31 @@ import {
   WORLD_CINEMA_FANOUT_LANGUAGE_CODES,
 } from '@/lib/originalLanguage';
 import type { CatalogMovieRow } from './catalogRow';
+import { catalogHasActiveEnergyAxis } from './catalogMovieScore';
+import {
+  activeManifestKeywordIds,
+  catalogHasManifestProbe,
+  catalogPoolOffset,
+} from './manifestProbe';
 
-const CATALOG_POOL_LIMIT = 800;
+const SLICE_LIMIT = 320;
+const KEYWORD_PROBE_LIMIT = 260;
 const BROAD_POOL_TRIGGER = 120;
+
+function hasActiveEnergyAxis(filters: FilterState): boolean {
+  return catalogHasActiveEnergyAxis(filters);
+}
+
+export type CatalogOrderBy = 'popularity' | 'vote_average' | 'vote_count' | 'release_date';
 
 export type CatalogQueryOptions = {
   /** `and` = every selected genre required (strict). `or` = any selected genre (relaxed top-up). */
   genreJoinMode?: 'and' | 'or';
+  orderBy?: CatalogOrderBy;
+  /** Window into the ordered catalog (filter-hash offset for variety). */
+  range?: { from: number; to: number };
+  /** When set, require overlap with these TMDB keyword ids (catalog `keyword_ids`). */
+  manifestKeywordIds?: number[];
 };
 
 function runtimeBounds(runtime: FilterState['runtime']): { gte?: number; lte?: number } {
@@ -26,6 +44,13 @@ function runtimeBounds(runtime: FilterState['runtime']): { gte?: number; lte?: n
 function voteFloors(filters: FilterState): { voteCountGte: number; voteAverageGte?: number } {
   let voteCountGte = 10;
   let voteAverageGte: number | undefined;
+  if (filters.genre.length > 0) {
+    voteCountGte = Math.max(voteCountGte, 80);
+  }
+  if (hasActiveEnergyAxis(filters)) {
+    voteCountGte = Math.max(voteCountGte, 300);
+    voteAverageGte = voteAverageGte ?? 6.0;
+  }
   if (filters.criticsVsFans === 'critics') {
     voteCountGte = 150;
     voteAverageGte = 7.5;
@@ -42,14 +67,11 @@ function voteFloors(filters: FilterState): { voteCountGte: number; voteAverageGt
   return { voteCountGte, voteAverageGte };
 }
 
-function orderColumn(filters: FilterState): { column: string; ascending: boolean } {
-  if (filters.criticsVsFans === 'fans') {
-    return { column: 'vote_count', ascending: false };
-  }
-  if (filters.decade.includes('new-releases')) {
-    return { column: 'release_date', ascending: false };
-  }
-  return { column: 'vote_average', ascending: false };
+function defaultOrderBy(filters: FilterState): CatalogOrderBy {
+  if (filters.criticsVsFans === 'fans') return 'vote_count';
+  if (filters.decade.includes('new-releases')) return 'release_date';
+  if (hasActiveEnergyAxis(filters)) return 'popularity';
+  return 'vote_average';
 }
 
 export async function queryCatalogByTmdbIds(
@@ -86,7 +108,7 @@ export async function queryCatalogCandidates(
   const { voteCountGte, voteAverageGte } = voteFloors(filters);
   const runtime = runtimeBounds(filters.runtime);
   const eraBounds = resolveEraDiscoverDateBounds(filters.decade);
-  const order = orderColumn(filters);
+  const orderBy = options?.orderBy ?? defaultOrderBy(filters);
 
   let q = supabase
     .from('movies')
@@ -116,7 +138,17 @@ export async function queryCatalogCandidates(
     q = q.overlaps('genre_ids', genreIds);
   }
 
-  q = q.order(order.column, { ascending: order.ascending }).limit(CATALOG_POOL_LIMIT);
+  const manifestKw = options?.manifestKeywordIds;
+  if (manifestKw != null && manifestKw.length > 0) {
+    q = q.overlaps('keyword_ids', manifestKw);
+  }
+
+  q = q.order(orderBy, { ascending: false });
+  if (options?.range) {
+    q = q.range(options.range.from, options.range.to);
+  } else {
+    q = q.limit(SLICE_LIMIT);
+  }
 
   const { data, error } = await q;
   if (error) throw new Error(`Supabase catalog query: ${error.message}`);
@@ -151,36 +183,84 @@ export async function fetchCatalogPool(
   supabase: SupabaseClient,
   filters: FilterState
 ): Promise<CatalogMovieRow[]> {
-  const strict = await queryCatalogCandidates(supabase, filters, { genreJoinMode: 'and' });
-  let combined = strict;
+  const offset = catalogPoolOffset(filters);
+  const manifestIds = activeManifestKeywordIds(filters);
+  const primaryOrder = defaultOrderBy(filters);
 
-  if (filters.genre.length > 1 && strict.length < BROAD_POOL_TRIGGER) {
-    const broad = await queryCatalogCandidates(supabase, filters, { genreJoinMode: 'or' });
-    combined = dedupeRows([...strict, ...broad]);
+  const slices: Promise<CatalogMovieRow[]>[] = [
+    queryCatalogCandidates(supabase, filters, {
+      genreJoinMode: 'and',
+      orderBy: primaryOrder,
+      range: { from: offset, to: offset + SLICE_LIMIT - 1 },
+    }),
+  ];
+
+  if (catalogHasManifestProbe(filters)) {
+    slices.push(
+      queryCatalogCandidates(supabase, filters, {
+        genreJoinMode: filters.genre.length > 1 ? 'or' : 'and',
+        orderBy: 'release_date',
+        manifestKeywordIds: manifestIds,
+        range: { from: 0, to: KEYWORD_PROBE_LIMIT - 1 },
+      })
+    );
+  }
+
+  if (hasActiveEnergyAxis(filters)) {
+    slices.push(
+      queryCatalogCandidates(supabase, filters, {
+        genreJoinMode: filters.genre.length > 1 ? 'or' : 'and',
+        orderBy: 'vote_count',
+        range: { from: 0, to: 199 },
+      })
+    );
+  }
+
+  let combined = dedupeRows((await Promise.all(slices)).flat());
+
+  if (filters.genre.length > 1 && combined.length < BROAD_POOL_TRIGGER) {
+    const broad = await queryCatalogCandidates(supabase, filters, {
+      genreJoinMode: 'or',
+      orderBy: primaryOrder,
+      range: { from: (offset + 90) % 300, to: (offset + 90) % 300 + SLICE_LIMIT - 1 },
+    });
+    combined = dedupeRows([...combined, ...broad]);
   }
 
   if (combined.length < BROAD_POOL_TRIGGER) {
-    const eraOnly: FilterState = {
-      ...filters,
-      genre: [],
-      narrative_pacing: null,
-      emotional_tone: null,
-      brain_power: null,
-      visual_style: null,
-      suspense_level: null,
-      world_style: null,
-      pacing: null,
-      cryMeter: null,
-      humor: null,
-      romance: null,
-      suspense: null,
-      intensity: null,
-      aListCast: null,
-      directorProminence: null,
-      criticsVsFans: null,
-    };
-    const eraTopUp = await queryCatalogCandidates(supabase, eraOnly, { genreJoinMode: 'or' });
-    combined = dedupeRows([...combined, ...eraTopUp]);
+    if (filters.genre.length === 0) {
+      const eraOnly: FilterState = {
+        ...filters,
+        narrative_pacing: null,
+        emotional_tone: null,
+        brain_power: null,
+        visual_style: null,
+        suspense_level: null,
+        world_style: null,
+        pacing: null,
+        cryMeter: null,
+        humor: null,
+        romance: null,
+        suspense: null,
+        intensity: null,
+        aListCast: null,
+        directorProminence: null,
+        criticsVsFans: null,
+      };
+      const eraTopUp = await queryCatalogCandidates(supabase, eraOnly, {
+        genreJoinMode: 'or',
+        orderBy: 'release_date',
+        range: { from: offset, to: offset + SLICE_LIMIT - 1 },
+      });
+      combined = dedupeRows([...combined, ...eraTopUp]);
+    } else if (filters.genre.length === 1) {
+      const broad = await queryCatalogCandidates(supabase, filters, {
+        genreJoinMode: 'or',
+        orderBy: primaryOrder,
+        range: { from: offset, to: offset + SLICE_LIMIT - 1 },
+      });
+      combined = dedupeRows([...combined, ...broad]);
+    }
   }
 
   return combined;
