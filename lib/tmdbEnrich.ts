@@ -164,7 +164,7 @@ function hasSecondaryFilters(filters: FilterState): boolean {
   if (filters.aListCast != null) return true;
   if (filters.criticsVsFans != null) return true;
   if (filters.decade.length > 0) return true;
-  if (filters.runtime != null) return true;
+  if (filters.runtime.length > 0) return true;
   if (filters.directorProminence != null) return true;
   if (filters.narrative_pacing != null && filters.narrative_pacing !== 50) return true;
   if (filters.emotional_tone != null && filters.emotional_tone !== 50) return true;
@@ -974,7 +974,7 @@ async function fetchDiscoverRawSingle(
       genre: working.genre?.length ? working.genre : undefined,
       genreJoinMode: working.genreJoinMode,
       decade: working.decade?.length ? working.decade.filter((d): d is NonNullable<typeof d> => d != null) : undefined,
-      runtime: working.runtime ?? null,
+      runtime: working.runtime ?? [],
       oscarFilter: working.oscarFilter ?? undefined,
       page,
       sortBy: working.sortBy,

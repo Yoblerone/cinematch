@@ -3,6 +3,7 @@ import type { FilterState } from '@/lib/types';
 import { defaultFilters } from '@/lib/types';
 import { getHybridMatches } from '@/lib/getHybridMatches';
 import { normalizeOriginalLanguageFilterInput } from '@/lib/originalLanguage';
+import { normalizeRuntimeSelection } from '@/lib/runtime';
 /** Hybrid match: Supabase catalog first, TMDB fallback when thin. */
 
 export async function POST(request: NextRequest) {
@@ -53,6 +54,7 @@ export async function POST(request: NextRequest) {
       directorProminence,
       genre: Array.isArray(raw.genre) ? raw.genre : defaultFilters.genre,
       decade: Array.isArray(raw.decade) ? raw.decade.filter((d): d is NonNullable<typeof d> => d != null) : defaultFilters.decade,
+      runtime: normalizeRuntimeSelection(raw.runtime),
     };
     const rawOscar = (body as Record<string, unknown>).oscarFilter;
     if (rawOscar === 'winner' || rawOscar === 'Winner') {

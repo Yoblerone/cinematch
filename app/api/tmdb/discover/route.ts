@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import type { Genre, Decade, Runtime } from '@/lib/types';
+import type { Genre, Decade, RuntimeBand } from '@/lib/types';
+import { normalizeRuntimeSelection } from '@/lib/runtime';
 import { buildDiscoverSearchParams, mapTmdbToMovie, type TmdbDiscoverResponse } from '@/lib/tmdb';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3/discover/movie';
@@ -10,12 +11,9 @@ const VALID_GENRES: Genre[] = [
   'Sci-Fi', 'Thriller', 'War', 'Western',
 ];
 type DecadeValue = Exclude<Decade, null>;
-type RuntimeValue = Exclude<Runtime, null>;
 const VALID_ERAS: DecadeValue[] = [
   '60s', '70s', '80s', '90s', '2000s', '2010s', '2020s', 'new-releases',
 ];
-const VALID_RUNTIMES: RuntimeValue[] = ['short', 'medium', 'long'];
-
 export async function GET(request: NextRequest) {
   const apiKey = process.env.TMDB_API_KEY;
   if (!apiKey) {
@@ -35,14 +33,15 @@ export async function GET(request: NextRequest) {
     genreParam && VALID_GENRES.includes(genreParam as Genre) ? (genreParam as Genre) : null;
   const decade: Decade =
     decadeParam && VALID_ERAS.includes(decadeParam as DecadeValue) ? (decadeParam as DecadeValue) : null;
-  const runtime: Runtime =
-    runtimeParam && VALID_RUNTIMES.includes(runtimeParam as RuntimeValue) ? (runtimeParam as RuntimeValue) : null;
+  const runtime: RuntimeBand[] = normalizeRuntimeSelection(
+    runtimeParam?.includes(',') ? runtimeParam.split(',') : runtimeParam
+  );
   const page = Math.max(1, parseInt(pageParam ?? '1', 10) || 1);
 
   const params = buildDiscoverSearchParams({
     genre: genre ? [genre] : undefined,
     decade: decade ? [decade] : undefined,
-    runtime: runtime ?? null,
+    runtime,
     page,
   });
   const url = new URL(TMDB_BASE);

@@ -10,6 +10,7 @@ import {
   NEW_RELEASES_DISCOVER_VOTE_FLOOR,
   resolveEraDiscoverDateBounds,
 } from './era';
+import { resolveRuntimeSqlBounds, type RuntimeBand } from './runtime';
 
 /** TMDB genre list: https://developer.themoviedb.org/reference/genre-movie-list */
 export const GENRE_ID_TO_NAME: Record<number, Genre> = {
@@ -71,13 +72,6 @@ export type SmartHarvestQuerySlice = {
   withRuntimeLte?: number;
   /** Comma-separated genre IDs placed first in `with_genres` (TMDB ordering / relevance bias). */
   genrePrimaryHeadComma?: string;
-};
-
-/** Runtime bands: short <90, medium 90–150, long 150+ */
-const RUNTIME_RANGES: Record<NonNullable<Runtime>, { gte: number; lte: number }> = {
-  short: { gte: 0, lte: 89 },
-  medium: { gte: 90, lte: 150 },
-  long: { gte: 151, lte: 400 },
 };
 
 /** TMDB keyword IDs for 18 Theme/Mood tags (discover with_keywords). */
@@ -153,7 +147,7 @@ export interface TmdbDiscoverParams {
   genreJoinMode?: 'and' | 'or';
   /** Multiple decades; we use min date–max date range. */
   decade?: (Decade & {})[];
-  runtime: Runtime;
+  runtime: RuntimeBand[];
   /** Best Picture is handled by strict local ID fetch; no TMDB keyword. Kept for type compatibility. */
   oscarFilter?: 'nominee' | 'winner' | 'both';
   page?: number;
@@ -298,19 +292,20 @@ export function buildDiscoverSearchParams(params: TmdbDiscoverParams): Record<st
     q['primary_release_date.gte'] = eraBounds.gte;
     q['primary_release_date.lte'] = eraBounds.lte;
   }
-  if (params.runtime != null) {
-    const range = RUNTIME_RANGES[params.runtime];
-    let gte = range.gte;
-    let lte = range.lte;
+  const runtimeBounds = resolveRuntimeSqlBounds(params.runtime ?? []);
+  if (runtimeBounds.kind === 'range') {
+    let gte = runtimeBounds.gte;
+    let lte = runtimeBounds.lte;
     if (sh?.withRuntimeGte != null) gte = Math.max(gte, sh.withRuntimeGte);
     if (sh?.withRuntimeLte != null) lte = Math.min(lte, sh.withRuntimeLte);
     if (gte <= lte) {
       q['with_runtime.gte'] = String(gte);
       q['with_runtime.lte'] = String(lte);
-    } else {
-      q['with_runtime.gte'] = String(range.gte);
-      q['with_runtime.lte'] = String(range.lte);
     }
+  } else if (runtimeBounds.kind === 'or') {
+    // TMDB discover has no OR for runtime — use merged envelope (short|long → full span).
+    q['with_runtime.gte'] = '0';
+    q['with_runtime.lte'] = '400';
   } else if (sh?.withRuntimeGte != null || sh?.withRuntimeLte != null) {
     const gte = sh.withRuntimeGte ?? 0;
     const lte = sh.withRuntimeLte ?? 400;

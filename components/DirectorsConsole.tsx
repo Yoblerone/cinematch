@@ -282,22 +282,37 @@ export default function DirectorsConsole({
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-brass-light mb-2">Runtime</label>
+                    <label className="block text-sm font-medium text-brass-light mb-2">
+                      Runtime <span className="text-cream/70 font-normal">(up to 2)</span>
+                    </label>
                     <div className="flex gap-2 flex-wrap">
-                      {(['short', 'medium', 'long'] as const).map((v) => (
-                        <button
-                          key={v}
-                          type="button"
-                          onClick={() =>
-                            onUpdate({ runtime: filters.runtime === v ? null : v })
-                          }
-                          className={`px-3 py-1.5 rounded-sm border-2 text-sm transition-all duration-300 ${
-                            filters.runtime === v ? 'border-brass bg-brass/15 text-neon-gold shadow-[0_0_20px_rgba(184,134,11,0.4)]' : 'border-brass/50 text-cream hover:border-brass hover:text-brass-light'
-                          }`}
-                        >
-                          {v === 'short' ? 'Short (<90 min)' : v === 'medium' ? 'Medium (90–150 min)' : 'Long (2.5 hr+)'}
-                        </button>
-                      ))}
+                      {(['short', 'medium', 'long'] as const).map((v) => {
+                        const selected = filters.runtime.includes(v);
+                        return (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() => {
+                              if (selected) {
+                                onUpdate({ runtime: filters.runtime.filter((x) => x !== v) });
+                              } else if (filters.runtime.length < 2) {
+                                onUpdate({ runtime: [...filters.runtime, v] });
+                              }
+                            }}
+                            className={`px-3 py-1.5 rounded-sm border-2 text-sm transition-all duration-300 ${
+                              selected
+                                ? 'border-brass bg-brass/15 text-neon-gold shadow-[0_0_20px_rgba(184,134,11,0.4)]'
+                                : 'border-brass/50 text-cream hover:border-brass hover:text-brass-light'
+                            }`}
+                          >
+                            {v === 'short'
+                              ? 'Short (<90 min)'
+                              : v === 'medium'
+                                ? 'Medium (90–150 min)'
+                                : 'Long (2.5 hr+)'}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                   <div>

@@ -9,18 +9,12 @@ import {
   movieMatchesNewReleases,
 } from './era';
 import { filterMoviesForOriginalLanguageChoice } from './originalLanguage';
+import { movieMatchesRuntime } from './runtime';
 
 export const RESULTS_GRID_SIZE = 36;
 
 function eraMatch(movie: Movie, eras: FilterState['decade']): boolean {
   return movieMatchesEra(movie, eras);
-}
-
-function runtimeMatch(runtimeMinutes: number, runtime: FilterState['runtime']): boolean {
-  if (runtime == null) return true;
-  if (runtime === 'short') return runtimeMinutes < 90;
-  if (runtime === 'medium') return runtimeMinutes >= 90 && runtimeMinutes <= 150;
-  return runtimeMinutes > 150;
 }
 
 function moviePassesLanguage(movie: Movie, filters: FilterState): boolean {
@@ -48,9 +42,9 @@ export function passesFullHardIntent(movie: Movie, filters: FilterState): boolea
   if (filters.genre.length > 0 && !movieHasAllSelectedGenres(movie, filters)) return false;
   if (filters.decade.length > 0 && !eraMatch(movie, filters.decade)) return false;
   if (
-    filters.runtime != null &&
+    filters.runtime.length > 0 &&
     movie.runtimeMinutes > 0 &&
-    !runtimeMatch(movie.runtimeMinutes, filters.runtime)
+    !movieMatchesRuntime(movie.runtimeMinutes, filters.runtime)
   ) {
     return false;
   }
@@ -75,9 +69,9 @@ export function hardMatchCount(movie: Movie, filters: FilterState): number {
   if (filters.genre.length === 0 || movieHasAllSelectedGenres(movie, filters)) n++;
   if (filters.decade.length === 0 || eraMatch(movie, filters.decade)) n++;
   if (
-    filters.runtime == null ||
+    filters.runtime.length === 0 ||
     movie.runtimeMinutes <= 0 ||
-    runtimeMatch(movie.runtimeMinutes, filters.runtime)
+    movieMatchesRuntime(movie.runtimeMinutes, filters.runtime)
   ) {
     n++;
   }
@@ -91,7 +85,11 @@ function collectHintsForMovie(movie: Movie, filters: FilterState): ResultsDiscla
   if (filters.originalLanguage != null && !moviePassesLanguage(movie, filters)) {
     out.push('language');
   }
-  if (filters.runtime != null && movie.runtimeMinutes > 0 && !runtimeMatch(movie.runtimeMinutes, filters.runtime)) {
+  if (
+    filters.runtime.length > 0 &&
+    movie.runtimeMinutes > 0 &&
+    !movieMatchesRuntime(movie.runtimeMinutes, filters.runtime)
+  ) {
     out.push('runtime');
   }
   if (filters.genre.length > 0 && !movieHasAllSelectedGenres(movie, filters)) {

@@ -16,7 +16,7 @@ export function shouldCatalogClaudeRerank(filters: FilterState): boolean {
     catalogHasActiveEnergyAxis(filters) ||
     filters.genre.length >= 2 ||
     filters.decade.length > 0 ||
-    filters.runtime != null ||
+    filters.runtime.length > 0 ||
     filters.aListCast != null ||
     filters.directorProminence != null ||
     filters.criticsVsFans != null ||

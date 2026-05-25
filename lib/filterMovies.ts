@@ -20,6 +20,7 @@ import {
 } from './scoring/thematicDensity';
 import { applyPacingElasticRerank } from './scoring/pacingElastic';
 import { eraSelectionIsOnlyNewReleases, movieMatchesEra } from './era';
+import { movieMatchesRuntime } from './runtime';
 
 /** Critics/fans applied last on a 0–100 normalized scale (metadata order: genre → penalties → bonuses → CF). */
 const CRITICS_FANS_WEIGHT = 0.42;
@@ -79,13 +80,6 @@ function eraMatch(movie: Movie, eras: FilterState['decade']): boolean {
   return movieMatchesEra(movie, eras);
 }
 
-function runtimeMatch(runtimeMinutes: number, runtime: FilterState['runtime']): boolean {
-  if (runtime == null) return true;
-  if (runtime === 'short') return runtimeMinutes < 90;
-  if (runtime === 'medium') return runtimeMinutes >= 90 && runtimeMinutes <= 150;
-  return runtimeMinutes > 150;
-}
-
 /** Cumulative atmosphere score: +100 per selected tag that matches (Cult Classic can match by budget/revenue/year). */
 function atmosphereScore(movie: Movie, filters: FilterState): number {
   void movie;
@@ -140,7 +134,9 @@ export function scoreMovieTasteNonVibe(movie: Movie, filters: FilterState): numb
     if (movie.oscarWinner) score += 500;
   }
   if (filters.decade.length > 0 && eraMatch(movie, filters.decade)) score += 1;
-  if (filters.runtime != null && runtimeMatch(movie.runtimeMinutes, filters.runtime)) score += 1;
+  if (filters.runtime.length > 0 && movieMatchesRuntime(movie.runtimeMinutes, filters.runtime)) {
+    score += 1;
+  }
   return score;
 }
 
@@ -206,7 +202,9 @@ export function filterMovies(
     ) {
       return false;
     }
-    if (filters.runtime != null && !runtimeMatch(movie.runtimeMinutes, filters.runtime)) return false;
+    if (filters.runtime.length > 0 && !movieMatchesRuntime(movie.runtimeMinutes, filters.runtime)) {
+      return false;
+    }
     return true;
   });
 

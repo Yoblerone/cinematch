@@ -7,6 +7,7 @@ import type { FilterState, Movie, ResultsDisclaimer } from '@/lib/types';
 import { defaultFilters } from '@/lib/types';
 import { formatOriginalLanguageCsvLabel } from '@/lib/originalLanguage';
 import { formatEraList } from '@/lib/era';
+import { formatRuntimeSelection } from '@/lib/runtime';
 import { buildResultsGrid } from '@/lib/resultsGrid';
 import MovieCard from './MovieCard';
 import ResultsDisclaimerCard from './ResultsDisclaimerCard';
@@ -85,7 +86,9 @@ function buildCsvExport(filters: FilterState, results: Movie[]): string {
   const paramLines: string[] = [];
   if (filters.genre.length > 0) paramLines.push(`Genre: ${filters.genre.join(' + ')}`);
   if (filters.decade.length > 0) paramLines.push(`Era: ${formatEraList(filters.decade)}`);
-  if (filters.runtime) paramLines.push(`Runtime: ${filters.runtime}`);
+  if (filters.runtime.length > 0) {
+    paramLines.push(`Runtime: ${formatRuntimeSelection(filters.runtime)}`);
+  }
   const langCsv = formatOriginalLanguageCsvLabel(filters.originalLanguage);
   if (langCsv) paramLines.push(`Language: ${langCsv}`);
   if (filters.oscarFilter) paramLines.push(`Best Picture: ${filters.oscarFilter}`);
@@ -191,7 +194,7 @@ export default function ResultsView({
   const hasSecondaryFilter =
     filters.genre.length > 0 ||
     filters.decade.length > 0 ||
-    filters.runtime != null ||
+    filters.runtime.length > 0 ||
     filters.originalLanguage != null;
   const shouldShowMatchPercent = !hasOsarFilter || hasSecondaryFilter;
 

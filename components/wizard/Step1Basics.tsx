@@ -2,18 +2,13 @@
 
 import { motion } from 'framer-motion';
 import { Film, Calendar, Clock, Globe } from 'lucide-react';
-import type { Genre, Decade, Runtime, OriginalLanguageChoice } from '@/lib/types';
+import type { Genre, Decade, RuntimeBand, OriginalLanguageChoice } from '@/lib/types';
 import { GENRE_OPTIONS } from '@/lib/optionSets';
-import { MAX_GENRES } from '@/lib/types';
+import { MAX_GENRES, MAX_RUNTIMES } from '@/lib/types';
 import { CURATED_ORIGINAL_LANGUAGE_OPTIONS } from '@/lib/originalLanguage';
 import { ERA_CHIP_OPTIONS } from '@/lib/era';
+import { RUNTIME_BANDS, runtimeBandLabel } from '@/lib/runtime';
 import StepResetButton from './StepResetButton';
-
-const RUNTIME_OPTIONS: { value: Exclude<Runtime, null>; label: string }[] = [
-  { value: 'short', label: 'Short (<90 min)' },
-  { value: 'medium', label: 'Medium (90–150 min)' },
-  { value: 'long', label: 'Long (2.5 hr+)' },
-];
 
 function Chip({
   selected,
@@ -42,11 +37,11 @@ function Chip({
 interface Step1BasicsProps {
   genre: Genre[];
   decade: (Decade & {})[];
-  runtime: Runtime;
+  runtime: RuntimeBand[];
   originalLanguage: OriginalLanguageChoice;
   onGenreChange: (g: Genre[]) => void;
   onDecadeChange: (d: (Decade & {})[]) => void;
-  onRuntimeChange: (r: Runtime) => void;
+  onRuntimeChange: (r: RuntimeBand[]) => void;
   onOriginalLanguageChange: (c: OriginalLanguageChoice) => void;
   onResetStep?: () => void;
 }
@@ -131,17 +126,27 @@ export default function Step1Basics({
           <div className="flex items-center gap-2 text-brass-light mb-3">
             <Clock className="w-5 h-5" />
             <span className="font-medium">Runtime</span>
+            <span className="text-cream text-xs">(up to {MAX_RUNTIMES})</span>
           </div>
           <div className="flex flex-wrap gap-2">
-            {RUNTIME_OPTIONS.map(({ value, label }) => (
-              <Chip
-                key={label}
-                selected={runtime === value}
-                onClick={() => onRuntimeChange(runtime === value ? null : value)}
-              >
-                {label}
-              </Chip>
-            ))}
+            <Chip selected={runtime.length === 0} onClick={() => onRuntimeChange([])}>
+              Any
+            </Chip>
+            {RUNTIME_BANDS.map((value) => {
+              const selected = runtime.includes(value);
+              return (
+                <Chip
+                  key={value}
+                  selected={selected}
+                  onClick={() => {
+                    if (selected) onRuntimeChange(runtime.filter((x) => x !== value));
+                    else if (runtime.length < MAX_RUNTIMES) onRuntimeChange([...runtime, value]);
+                  }}
+                >
+                  {runtimeBandLabel(value)}
+                </Chip>
+              );
+            })}
           </div>
         </div>
 

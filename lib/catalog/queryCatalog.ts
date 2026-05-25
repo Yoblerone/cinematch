@@ -8,6 +8,7 @@ import {
 } from '@/lib/originalLanguage';
 import type { CatalogMovieRow } from './catalogRow';
 import { catalogHasActiveEnergyAxis } from './catalogMovieScore';
+import { resolveRuntimeSqlBounds } from '@/lib/runtime';
 import {
   activeManifestKeywordIds,
   catalogHasManifestProbe,
@@ -34,12 +35,6 @@ export type CatalogQueryOptions = {
   manifestKeywordIds?: number[];
 };
 
-function runtimeBounds(runtime: FilterState['runtime']): { gte?: number; lte?: number } {
-  if (runtime === 'short') return { lte: 89 };
-  if (runtime === 'medium') return { gte: 90, lte: 150 };
-  if (runtime === 'long') return { gte: 151 };
-  return {};
-}
 
 function voteFloors(filters: FilterState): { voteCountGte: number; voteAverageGte?: number } {
   let voteCountGte = 10;
@@ -106,7 +101,7 @@ export async function queryCatalogCandidates(
 ): Promise<CatalogMovieRow[]> {
   const genreJoinMode = options?.genreJoinMode ?? (filters.genre.length > 1 ? 'and' : 'and');
   const { voteCountGte, voteAverageGte } = voteFloors(filters);
-  const runtime = runtimeBounds(filters.runtime);
+  const runtimeBounds = resolveRuntimeSqlBounds(filters.runtime);
   const eraBounds = resolveEraDiscoverDateBounds(filters.decade);
   const orderBy = options?.orderBy ?? defaultOrderBy(filters);
 
@@ -117,8 +112,11 @@ export async function queryCatalogCandidates(
     .not('poster_path', 'is', null);
 
   if (voteAverageGte != null) q = q.gte('vote_average', voteAverageGte);
-  if (runtime.gte != null) q = q.gte('runtime_minutes', runtime.gte);
-  if (runtime.lte != null) q = q.lte('runtime_minutes', runtime.lte);
+  if (runtimeBounds.kind === 'range') {
+    q = q.gte('runtime_minutes', runtimeBounds.gte).lte('runtime_minutes', runtimeBounds.lte);
+  } else if (runtimeBounds.kind === 'or') {
+    q = q.or(runtimeBounds.filter);
+  }
   if (eraBounds?.gte) q = q.gte('release_date', eraBounds.gte);
   if (eraBounds?.lte) q = q.lte('release_date', eraBounds.lte);
 

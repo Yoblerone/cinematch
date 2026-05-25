@@ -9,6 +9,7 @@ import { FILTER_WEIGHT_LOW, FILTER_WEIGHT_HIGH } from '@/lib/filterWeightSegment
 import { GENRE_OPTIONS } from '@/lib/optionSets';
 import type { Genre } from '@/lib/types';
 import { coerceOriginalLanguageFromSession } from '@/lib/originalLanguage';
+import { normalizeRuntimeSelection } from '@/lib/runtime';
 import Step1Basics from './wizard/Step1Basics';
 import Step2Energy from './wizard/Step2Energy';
 import Step4Pedigree from './wizard/Step4Pedigree';
@@ -68,8 +69,7 @@ function mergeSanitizedFilters(raw: Partial<FilterState>): FilterState {
     raw.oscarFilter === 'winner' || raw.oscarFilter === 'nominee' || raw.oscarFilter === 'both'
       ? raw.oscarFilter
       : null;
-  const runtime =
-    raw.runtime === 'short' || raw.runtime === 'medium' || raw.runtime === 'long' ? raw.runtime : null;
+  const runtime = normalizeRuntimeSelection(raw.runtime);
   const criticsVsFans =
     raw.criticsVsFans === 'critics' || raw.criticsVsFans === 'fans' || raw.criticsVsFans === 'both'
       ? raw.criticsVsFans
@@ -505,7 +505,7 @@ export default function RedCarpetWizard() {
                     updateFilters({
                       genre: [],
                       decade: [],
-                      runtime: null,
+                      runtime: [],
                       originalLanguage: null,
                     })
                   }

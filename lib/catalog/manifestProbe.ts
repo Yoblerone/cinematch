@@ -16,7 +16,7 @@ export function catalogPoolOffset(filters: FilterState): number {
   const parts = [
     filters.genre.join('|'),
     filters.decade.join('|'),
-    filters.runtime ?? '',
+    filters.runtime.join('|'),
     filters.crowd ?? '',
     filters.narrative_pacing ?? '',
     filters.emotional_tone ?? '',

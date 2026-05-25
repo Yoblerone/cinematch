@@ -100,7 +100,12 @@ export type Decade =
   | 'new-releases'
   | null;
 
-export type Runtime = 'short' | 'medium' | 'long' | null; // short <90, medium 90–150, long 150+
+export type Runtime = 'short' | 'medium' | 'long' | null; // legacy single value in APIs
+
+/** Selected runtime band(s); empty = any. Up to {@link MAX_RUNTIMES}. */
+export type RuntimeBand = Exclude<Runtime, null>;
+
+export const MAX_RUNTIMES = 2;
 
 export interface Movie {
   id: string;
@@ -235,7 +240,8 @@ export interface FilterState {
   oscarFilter: 'nominee' | 'winner' | 'both' | null;
   /** Era chips (historical decades + `new-releases`); empty = any. OR across selections. */
   decade: Decade[];
-  runtime: Runtime;
+  /** OR across bands (e.g. short + long); up to {@link MAX_RUNTIMES}. */
+  runtime: RuntimeBand[];
   /** Null = Off (ignored). */
   directorProminence: 'low' | 'high' | null;
   /**
@@ -291,7 +297,7 @@ export const defaultFilters: FilterState = {
   criticsVsFans: null,
   oscarFilter: null,
   decade: [],
-  runtime: null,
+  runtime: [],
   directorProminence: null,
   originalLanguage: null,
 };
