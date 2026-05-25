@@ -8,6 +8,10 @@ import { catalogPoolOffset } from './catalog/manifestProbe';
 import { buildCatalogPresentationPool } from './catalog/rankCatalogPool';
 import { applyPacingElasticRerank } from './scoring/pacingElastic';
 import { applyFranchiseDiversityCap } from './catalog/diversity';
+import { shouldCatalogClaudeRerank } from './catalog/shouldCatalogClaudeRerank';
+import { CATALOG_CLAUDE_POOL_CAP, claudeRerankModel } from './catalog/claudeRerankConfig';
+import { claudeRerank } from './claudeRerank';
+import { patchBackfillDetails } from './tmdbEnrich';
 import {
   getOscarBothIds,
   getOscarNomineeIds,
@@ -16,7 +20,10 @@ import {
 
 type MatchOptions = { discoverStartPage?: number };
 
-async function getCatalogMatches(filters: FilterState): Promise<TmdbMatchResponse> {
+async function getCatalogMatches(
+  filters: FilterState,
+  tmdbApiKey: string
+): Promise<TmdbMatchResponse> {
   const supabase = getSupabaseAdmin();
   if (!supabase) {
     throw new Error(
@@ -40,16 +47,27 @@ async function getCatalogMatches(filters: FilterState): Promise<TmdbMatchRespons
   const presentationPool = buildCatalogPresentationPool(movies, filters);
   const paced = applyPacingElasticRerank(presentationPool, filters);
   const diverse = applyFranchiseDiversityCap(paced);
-  const strictInPool = diverse.filter((m) => moviePassesStrictGrid(m, filters)).length;
+  const poolForClaude = diverse.slice(0, CATALOG_CLAUDE_POOL_CAP);
+  const strictInPool = poolForClaude.filter((m) => moviePassesStrictGrid(m, filters)).length;
+
+  let presentation = poolForClaude;
+  let claudeRerankUsed = false;
+  if (shouldCatalogClaudeRerank(filters) && tmdbApiKey.trim()) {
+    const reranked = await claudeRerank(poolForClaude, filters, tmdbApiKey);
+    presentation = await patchBackfillDetails(tmdbApiKey, reranked);
+    claudeRerankUsed = true;
+  }
 
   console.log('[match] catalog', {
     catalogRowCount: rows.length,
-    presentationPool: diverse.length,
+    presentationPool: presentation.length,
     strictInPool,
     poolOffset: catalogPoolOffset(filters),
+    claudeRerankUsed,
+    claudeModel: claudeRerankUsed ? claudeRerankModel() : null,
   });
 
-  return finalizeMatchPresentation(diverse, filters);
+  return finalizeMatchPresentation(presentation, filters);
 }
 
 /**
@@ -68,5 +86,5 @@ export async function getHybridMatches(
     return getTmdbMatches(tmdbApiKey, filters, options);
   }
 
-  return getCatalogMatches(filters);
+  return getCatalogMatches(filters, tmdbApiKey);
 }

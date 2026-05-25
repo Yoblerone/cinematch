@@ -430,7 +430,7 @@ export async function fetchMovieDetails(apiKey: string, movieId: number): Promis
  * movieFromSearchResult (used in claudeRerank) only calls the TMDB Search endpoint which
  * doesn't include imdb_id or videos. We fetch details for the small handful of such films.
  */
-async function patchBackfillDetails(apiKey: string, movies: Movie[]): Promise<Movie[]> {
+export async function patchBackfillDetails(apiKey: string, movies: Movie[]): Promise<Movie[]> {
   const needsPatch = movies.filter(
     (m) =>
       m.claudeSuggested &&

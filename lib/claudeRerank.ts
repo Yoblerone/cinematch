@@ -2,9 +2,24 @@ import type { FilterState, Movie, Decade } from './types';
 import type { TmdbMovieResult } from './tmdb';
 import { mapTmdbToMovie, GENRE_NAME_TO_ID } from './tmdb';
 import { HISTORICAL_ERA_YEAR_RANGES, NEW_RELEASES_WINDOW_DAYS } from './era';
+import {
+  nearestFilterWeightStop,
+  FILTER_WEIGHT_HIGH,
+  FILTER_WEIGHT_LOW,
+  FILTER_WEIGHT_MED,
+} from './filterWeightSegments';
+import { buildEnergyAxisConstraints } from './scoring/energyAxisGuards';
+import {
+  claudeRerankModel,
+  CLAUDE_RERANK_MAX_OUTPUT_TOKENS,
+  CLAUDE_RERANK_KEYWORD_SNIPPETS,
+  CLAUDE_RERANK_OVERVIEW_CHARS,
+  MAX_CLAUDE_BACKFILL_SEARCHES,
+} from './catalog/claudeRerankConfig';
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const TMDB_SEARCH = 'https://api.themoviedb.org/3/search/movie';
+const CLAUDE_POOL_CAP = 48;
 
 function buildDecadeConstraint(decades: FilterState['decade']): string {
   const valid = (decades ?? []).filter((d): d is NonNullable<Decade> => d != null);
@@ -26,40 +41,46 @@ function buildVibeDescriptionClause(filters: FilterState): string {
   const parts: string[] = [];
   const pacing = filters.narrative_pacing;
   if (pacing != null) {
-    if (pacing >= 80) parts.push('fast-paced');
-    else if (pacing <= 20) parts.push('slow-paced');
+    const stop = nearestFilterWeightStop(pacing);
+    if (stop === FILTER_WEIGHT_HIGH) parts.push('fast-paced');
+    else if (stop === FILTER_WEIGHT_LOW) parts.push('slow-paced');
   }
 
   const tone = filters.emotional_tone;
   if (tone != null) {
-    if (tone >= 80) parts.push('emotionally heavy');
-    else if (tone <= 20) parts.push('light and fun');
+    const stop = nearestFilterWeightStop(tone);
+    if (stop === FILTER_WEIGHT_HIGH) parts.push('emotionally heavy');
+    else if (stop === FILTER_WEIGHT_LOW) parts.push('light and fun');
   }
 
   const brain = filters.brain_power;
   if (brain != null) {
-    if (brain >= 80) parts.push('thought-provoking and intellectual');
-    else if (brain <= 20) parts.push('escapist entertainment');
+    const stop = nearestFilterWeightStop(brain);
+    if (stop === FILTER_WEIGHT_HIGH) parts.push('thought-provoking and intellectual');
+    else if (stop === FILTER_WEIGHT_LOW) parts.push('escapist entertainment');
   }
 
   const visual = filters.visual_style;
   if (visual != null) {
-    if (visual >= 80) parts.push('epic visual scale');
-    else if (visual >= 30 && visual <= 79) parts.push('cinematic and visually distinctive');
-    else if (visual <= 20) parts.push('intimate and raw');
+    const stop = nearestFilterWeightStop(visual);
+    if (stop === FILTER_WEIGHT_HIGH) parts.push('epic visual scale');
+    else if (stop === FILTER_WEIGHT_MED) parts.push('cinematic and visually distinctive');
+    else if (stop === FILTER_WEIGHT_LOW) parts.push('intimate and raw');
   }
 
   const suspense = filters.suspense_level;
   if (suspense != null) {
-    if (suspense >= 80) parts.push('tense and suspenseful');
-    else if (suspense <= 20) parts.push('relaxed and low-stakes');
+    const stop = nearestFilterWeightStop(suspense);
+    if (stop === FILTER_WEIGHT_HIGH) parts.push('tense and suspenseful');
+    else if (stop === FILTER_WEIGHT_LOW) parts.push('relaxed and low-stakes');
   }
 
   const world = filters.world_style;
   if (world != null) {
-    if (world >= 80) parts.push('surreal or fantastical');
-    else if (world >= 30 && world <= 79) parts.push('stylized and heightened');
-    else if (world <= 20) parts.push('grounded and realistic');
+    const stop = nearestFilterWeightStop(world);
+    if (stop === FILTER_WEIGHT_HIGH) parts.push('surreal or fantastical worlds');
+    else if (stop === FILTER_WEIGHT_MED) parts.push('stylized and heightened worlds');
+    else if (stop === FILTER_WEIGHT_LOW) parts.push('grounded and realistic worlds');
   }
 
   if (filters.aListCast === 'high') {
@@ -109,7 +130,18 @@ function buildVibeDescriptionClause(filters: FilterState): string {
 }
 
 function numberedTitles(pool: Movie[]): string {
-  const lines = pool.slice(0, 60).map((m, i) => `${i + 1}. ${m.title}`);
+  const lines = pool.slice(0, CLAUDE_POOL_CAP).map((m, i) => {
+    const genres = m.genre?.length ? m.genre.join(', ') : 'unknown';
+    const kw = (m.keywordNames ?? []).slice(0, CLAUDE_RERANK_KEYWORD_SNIPPETS).join(', ');
+    const overview =
+      typeof m.overview === 'string' && m.overview.trim()
+        ? m.overview.trim().slice(0, CLAUDE_RERANK_OVERVIEW_CHARS).replace(/\s+/g, ' ')
+        : '';
+    const bits = [`${i + 1}. ${m.title} (${m.year || '?'})`, `[${genres}]`];
+    if (kw) bits.push(`keywords: ${kw}`);
+    if (overview) bits.push(`— ${overview}`);
+    return bits.join(' ');
+  });
   return lines.join('\n');
 }
 
@@ -180,14 +212,13 @@ function movieFromSearchResult(r: TmdbMovieResult): Movie {
 }
 
 export async function claudeRerank(pool: Movie[], filters: FilterState, apiKey: string): Promise<Movie[]> {
-  console.log(
-    '[CLAUDE RERANK] called, ANTHROPIC_API_KEY present:',
-    !!process.env.ANTHROPIC_API_KEY,
-    'pool size:',
-    pool.length,
-  );
+  const log = process.env.NODE_ENV === 'development';
+  if (log) {
+    console.log('[CLAUDE RERANK] pool:', pool.length, 'model:', claudeRerankModel());
+  }
   try {
     const vibeDescription = buildVibeDescriptionClause(filters);
+    const axisConstraints = buildEnergyAxisConstraints(filters);
     const list = numberedTitles(pool);
     const genreList = filters.genre.length > 0 ? filters.genre.join(', ') : 'none selected';
 
@@ -200,7 +231,7 @@ export async function claudeRerank(pool: Movie[], filters: FilterState, apiKey: 
     const offPoolConstraint = filters.genre.length > 0
       ? ` Any film you suggest that is not in the list above must genuinely be a ${genreList} film — do not suggest films that are not actually in those genres.`
       : '';
-    const userMessage = `Here are up to 60 movies from a discovery pool: ${list}. ${vibeDescription} IMPORTANT: Only include films that genuinely belong in ALL of these genres: ${genreList}. A film must fit every selected genre to appear in the list. Do not include films that only match one genre.${decadeConstraint} Return a JSON array of exactly 36 objects ranked best to worst match. Each object must have exactly two fields: title (string) and match (integer 0-100). For each film return a match percentage (0-100) representing how well it fits ALL of the specified criteria. 100 means perfect fit, 0 means no fit. You may include films not in the list above if they are a strong match — but only well-known films with wide release.${offPoolConstraint} Return only the JSON array.`;
+    const userMessage = `Here are up to ${CLAUDE_POOL_CAP} movies from a discovery pool: ${list}. ${vibeDescription}${axisConstraints} IMPORTANT: Only include films that genuinely belong in ALL of these genres: ${genreList}. A film must fit every selected genre to appear in the list. Do not include films that only match one genre.${decadeConstraint} Rank by fit to ALL vibe constraints above — mismatched energy (e.g. fairy-tale fantasy when grounded realism was requested, or a slow grief drama when fast-paced was requested) should score below 40 and be omitted. Return a JSON array of exactly 36 objects ranked best to worst match. Each object must have exactly two fields: title (string) and match (integer 0-100). For each film return a match percentage (0-100) representing how well it fits ALL of the specified criteria. 100 means perfect fit, 0 means no fit. You may include at most 3 films not in the list above if they are an exceptional match — well-known, wide release only.${offPoolConstraint} Return only the JSON array.`;
 
     const response = await fetch(ANTHROPIC_URL, {
       method: 'POST',
@@ -210,22 +241,21 @@ export async function claudeRerank(pool: Movie[], filters: FilterState, apiKey: 
         'x-api-key': anthropicKey,
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-5',
-        max_tokens: 1500,
+        model: claudeRerankModel(),
+        max_tokens: CLAUDE_RERANK_MAX_OUTPUT_TOKENS,
         system:
           'You are an expert film curator. Return only a raw JSON array of objects, no markdown, no backticks, no explanation, no preamble. Start your response with [ and end with ]. Each object must have exactly two fields: title (string) and match (integer 0-100).',
         messages: [{ role: 'user', content: userMessage }],
       }),
     });
-    console.log('[CLAUDE RERANK] response status:', response.status);
-    const rawJson = (await response.json()) as {
-      content?: Array<{ type?: string; text?: string }>;
-    };
-    console.log('[CLAUDE RERANK] raw json:', JSON.stringify(rawJson).slice(0, 500));
+    if (log) console.log('[CLAUDE RERANK] status:', response.status);
 
     if (!response.ok) {
       return pool;
     }
+    const rawJson = (await response.json()) as {
+      content?: Array<{ type?: string; text?: string }>;
+    };
     const block = rawJson.content?.find((c) => c.type === 'text' && typeof c.text === 'string');
     const rawText = block?.text;
     if (typeof rawText !== 'string') {
@@ -233,10 +263,9 @@ export async function claudeRerank(pool: Movie[], filters: FilterState, apiKey: 
     }
 
     const rankedItems = parseRankedItems(rawText);
-    const titlesArray = (rankedItems ?? []).map((x) => x.title);
-    console.log('[CLAUDE RERANK] prompt:', userMessage);
-    console.log('[CLAUDE RERANK] raw response:', rawText);
-    console.log('[CLAUDE RERANK] final titles:', titlesArray);
+    if (log) {
+      console.log('[CLAUDE RERANK] titles:', (rankedItems ?? []).map((x) => x.title).slice(0, 10));
+    }
     if (!rankedItems) {
       return pool;
     }
@@ -244,6 +273,7 @@ export async function claudeRerank(pool: Movie[], filters: FilterState, apiKey: 
     const byLowerTitle = poolTitleIndex(pool);
     const out: Movie[] = [];
     const seen = new Set<string>();
+    let backfillSearches = 0;
 
     // Pre-compute required genre IDs for backfill validation.
     // Backfill films come from Claude suggestions that TMDB Discover didn't surface — meaning
@@ -268,6 +298,8 @@ export async function claudeRerank(pool: Movie[], filters: FilterState, apiKey: 
         continue;
       }
 
+      if (backfillSearches >= MAX_CLAUDE_BACKFILL_SEARCHES) continue;
+      backfillSearches += 1;
       const found = await searchMovieByTitle(title, apiKey);
       if (!found) continue;
       const suggested = movieFromSearchResult(found);

@@ -7,11 +7,12 @@ import { isOscarListedId, isOscarNomineeId, isOscarWinnerId } from '@/lib/data/o
 import { parseTmdbMovieId } from '@/lib/tmdb';
 import { nearestFilterWeightStop, FILTER_WEIGHT_HIGH, FILTER_WEIGHT_LOW } from '@/lib/filterWeightSegments';
 import { pacingKeywords } from '@/lib/scoring/pacingElastic';
-import {
-  computeMovieThematicDensity,
-  type ThematicDensityResult,
-} from '@/lib/scoring/thematicDensity';
+import { computeMovieThematicDensity, type ThematicDensityResult } from '@/lib/scoring/thematicDensity';
 import type { EnergyManifestAxis } from '@/lib/scoring/energyManifest';
+import {
+  sumEnergyAxisMatchBoost,
+  sumEnergyAxisOpposingPenalties,
+} from '@/lib/scoring/energyAxisGuards';
 
 const ENERGY_AXES: EnergyManifestAxis[] = [
   'narrative_pacing',
@@ -175,16 +176,20 @@ export function scoreCatalogMovie(movie: Movie, filters: FilterState): CatalogMo
   const qualityBuffer = (movie.rating ?? 0) * 4;
   const visibility = visibilityBoost(movie);
   const famePenalty = catalogFameMismatchPenalty(movie, filters, thematic, energyActive);
+  const axisBoost = sumEnergyAxisMatchBoost(movie, filters);
+  const axisPenalty = sumEnergyAxisOpposingPenalties(movie, filters);
 
   const totalScore =
     qualityBuffer +
     pacingBoost +
     genreBoost +
     pedigree +
+    axisBoost +
     visibility * VISIBILITY_WEIGHT +
     thematic.density_score * VIBE_DENSITY_WEIGHT +
     sliderAlignment * SLIDER_ALIGN_WEIGHT -
-    famePenalty;
+    famePenalty -
+    axisPenalty;
 
   return { thematic, totalScore, pacingBoost, sliderAlignment };
 }
